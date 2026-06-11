@@ -2378,13 +2378,26 @@ namespace Hoshino
 
             GUILayout.Space(16);
 
-            GUILayout.BeginHorizontal();
-            newFileName = GUILayout.TextField(newFileName, GUILayout.ExpandWidth(true));
+            var exists = paths.Any(p => System.IO.Path.GetFileNameWithoutExtension(p) == newFileName);
 
-            if (GUILayout.Button("新建", GUILayout.Width(60)))
+            GUILayout.BeginHorizontal();
+            if (exists)
             {
-                var cutscene = SkillFileManager.CreateNewFile(newFileName);
-                if (cutscene != null) InitializeAll(cutscene);
+                GUI.color = Color.red;
+                newFileName = GUILayout.TextField(newFileName, GUILayout.ExpandWidth(true));
+                GUI.color = Color.white;
+                GUI.enabled = false;
+                GUILayout.Button("新建", GUILayout.Width(60));
+                GUI.enabled = true;
+            }
+            else
+            {
+                newFileName = GUILayout.TextField(newFileName, GUILayout.ExpandWidth(true));
+                if (GUILayout.Button("新建", GUILayout.Width(60)))
+                {
+                    var cutscene = SkillFileManager.CreateNewFile(newFileName);
+                    if (cutscene != null) InitializeAll(cutscene);
+                }
             }
             GUILayout.EndHorizontal();
 

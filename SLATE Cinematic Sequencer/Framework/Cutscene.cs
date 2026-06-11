@@ -11,7 +11,7 @@ namespace Slate
     {
         private void OnEnable()
         {
-            Debug.Log("On Curscene Enable");
+            // Debug.Log("On Curscene Enable");
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.update += EditorUpdate;
 #endif

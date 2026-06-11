@@ -47,7 +47,7 @@ namespace Hoshino
             var json = JsonUtility.ToJson(data, true);
 
             File.WriteAllText(filePath, json);
-            AssetDatabase.Refresh();
+            EditorApplication.delayCall += () => AssetDatabase.Refresh();
 
             Object.DestroyImmediate(cutscene.gameObject);
 
@@ -89,7 +89,31 @@ namespace Hoshino
 
             var jsonOnDisk = File.ReadAllText(filePath);
             var jsonCurrent = SkillSerializer.ExportToJson(cutscene);
-            return jsonOnDisk != jsonCurrent;
+            if (jsonOnDisk != jsonCurrent)
+            {
+                // LogDiff(jsonOnDisk, jsonCurrent);
+                return true;
+            }
+            return false;
+        }
+
+        static void LogDiff(string a, string b)
+        {
+            int minLen = Mathf.Min(a.Length, b.Length);
+            for (int i = 0; i < minLen; i++)
+            {
+                if (a[i] != b[i])
+                {
+                    int start = Mathf.Max(0, i - 40);
+                    int endA = Mathf.Min(a.Length, i + 40);
+                    int endB = Mathf.Min(b.Length, i + 40);
+                    Debug.LogWarning($"[SkillFileManager] 差异位置: {i}, 盘上长度={a.Length}, 当前长度={b.Length}\n" +
+                        $"  盘上: ...{a.Substring(start, endA - start)}...\n" +
+                        $"  当前: ...{b.Substring(start, endB - start)}...");
+                    return;
+                }
+            }
+            Debug.LogWarning($"[SkillFileManager] 内容相同但长度不同: 盘上={a.Length}, 当前={b.Length}");
         }
 
         static void DisposeOldRefs(string filePath)

@@ -61,15 +61,7 @@ namespace Hoshino
         public float blendIn;
         public float blendOut;
         public int line = 1;
-        public List<CustomFieldEntry> customFields;
-    }
-
-    [Serializable]
-    public class CustomFieldEntry
-    {
-        public string key;
-        public string type;
-        public string valueJson;
+        public string customData;
     }
 }
 

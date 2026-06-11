@@ -1,7 +1,6 @@
 #if UNITY_EDITOR
 
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using Slate;
 using UnityEditor;
@@ -117,76 +116,7 @@ namespace Hoshino
 
             if (clip is ISkillClipSerializer serializer)
             {
-                entry.customFields = new List<CustomFieldEntry>
-                {
-                    new CustomFieldEntry { key = "__interface__", type = "serializer", valueJson = serializer.SerializeCustomData() }
-                };
-            }
-            else
-            {
-                entry.customFields = ExportSkillFields(clip);
-            }
-        }
-
-        static List<CustomFieldEntry> ExportSkillFields(ActionClip clip)
-        {
-            var list = new List<CustomFieldEntry>();
-            var type = clip.GetType();
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
-            foreach (var field in fields)
-            {
-                if (field.GetCustomAttribute<SkillFieldAttribute>() == null) continue;
-
-                var value = field.GetValue(clip);
-                if (value == null) continue;
-
-                var entry = new CustomFieldEntry { key = field.Name };
-                FieldValueToEntry(field.FieldType, value, entry);
-                list.Add(entry);
-            }
-
-            return list.Count > 0 ? list : null;
-        }
-
-        static void FieldValueToEntry(Type fieldType, object value, CustomFieldEntry entry)
-        {
-            if (fieldType == typeof(float))
-            {
-                entry.type = "float";
-                entry.valueJson = ((float)value).ToString("G9");
-            }
-            else if (fieldType == typeof(int))
-            {
-                entry.type = "int";
-                entry.valueJson = ((int)value).ToString();
-            }
-            else if (fieldType == typeof(bool))
-            {
-                entry.type = "bool";
-                entry.valueJson = value.ToString().ToLower();
-            }
-            else if (fieldType == typeof(string))
-            {
-                entry.type = "string";
-                entry.valueJson = (string)value;
-            }
-            else if (fieldType == typeof(Vector2) || fieldType == typeof(Vector3) ||
-                     fieldType == typeof(Vector4) || fieldType == typeof(Quaternion) ||
-                     fieldType == typeof(Color) || fieldType == typeof(Color32))
-            {
-                entry.type = fieldType.Name;
-                entry.valueJson = JsonUtility.ToJson(value);
-            }
-            else if (fieldType.IsEnum)
-            {
-                entry.type = "enum";
-                entry.valueJson = ((int)value).ToString();
-            }
-            else
-            {
-                entry.type = "unknown";
-                entry.valueJson = JsonUtility.ToJson(value);
+                entry.customData = serializer.SerializeCustomData();
             }
         }
 
@@ -204,6 +134,8 @@ namespace Hoshino
             cutscene.viewTimeMax = data.viewTimeMax;
             cutscene.playTimeMin = data.playTimeMin;
             cutscene.playTimeMax = data.playTimeMax;
+
+            cutscene.groups.Clear();
 
             foreach (var groupEntry in data.groups)
             {
@@ -317,77 +249,12 @@ namespace Hoshino
             clip.blendOut = entry.blendOut;
             SetPrivateField<ActionClip, int>(clip, "_line", entry.line);
 
-            if (entry.customFields != null && entry.customFields.Count > 0)
+            if (!string.IsNullOrEmpty(entry.customData) && clip is ISkillClipSerializer serializer)
             {
-                if (entry.customFields.Count == 1 &&
-                    entry.customFields[0].key == "__interface__" &&
-                    entry.customFields[0].type == "serializer" &&
-                    clip is ISkillClipSerializer serializer)
-                {
-                    serializer.DeserializeCustomData(entry.customFields[0].valueJson);
-                }
-                else
-                {
-                    ImportSkillFields(clip, entry.customFields);
-                }
+                serializer.DeserializeCustomData(entry.customData);
             }
 
             return clip;
-        }
-
-        static void ImportSkillFields(ActionClip clip, List<CustomFieldEntry> fields)
-        {
-            var type = clip.GetType();
-
-            foreach (var entry in fields)
-            {
-                var field = type.GetField(entry.key, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (field == null)
-                {
-                    Debug.LogWarning($"[SkillSerializer] 字段不存在: {type.Name}.{entry.key}");
-                    continue;
-                }
-
-                var value = EntryToFieldValue(field.FieldType, entry);
-                if (value != null)
-                {
-                    field.SetValue(clip, value);
-                }
-            }
-        }
-
-        static object EntryToFieldValue(Type fieldType, CustomFieldEntry entry)
-        {
-            switch (entry.type)
-            {
-                case "float":
-                    if (float.TryParse(entry.valueJson, out var f)) return f;
-                    break;
-                case "int":
-                    if (int.TryParse(entry.valueJson, out var i)) return i;
-                    break;
-                case "bool":
-                    if (bool.TryParse(entry.valueJson, out var b)) return b;
-                    break;
-                case "string":
-                    return entry.valueJson;
-                case "enum":
-                    if (int.TryParse(entry.valueJson, out var enumVal)) return Enum.ToObject(fieldType, enumVal);
-                    break;
-                case "Vector2":
-                case "Vector3":
-                case "Vector4":
-                case "Quaternion":
-                case "Color":
-                case "Color32":
-                    var obj = Activator.CreateInstance(fieldType);
-                    JsonUtility.FromJsonOverwrite(entry.valueJson, obj);
-                    return obj;
-                default:
-                    Debug.LogError($"[SkillSerializer] 不支持的类型: {entry.type}");
-                    break;
-            }
-            return null;
         }
 
         // ---------- Helper ----------
