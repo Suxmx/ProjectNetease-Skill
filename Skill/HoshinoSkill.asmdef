@@ -1,0 +1,18 @@
+{
+    "name": "HoshinoSkill",
+    "rootNamespace": "",
+    "references": [
+        "GUID:61a68efbb0c03dc42ad7614dc4858ec4",
+        "GUID:de4e6084e6d474788bb8c799d6b461ec",
+        "GUID:d8b63aba1907145bea998dd612889d6b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

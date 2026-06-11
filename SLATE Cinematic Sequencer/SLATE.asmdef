@@ -1,0 +1,26 @@
+{
+    "name": "SLATE",
+    "rootNamespace": "",
+    "references": [
+        "FrameCapturer",
+        "Unity.Postprocessing.Runtime",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.HighDefinition.Runtime",
+        "Unity.Formats.Alembic.Runtime",
+        "Kybernetik.Animancer",
+        "Unity.EditorCoroutines.Editor",
+        "Cinemachine"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [
+        ""
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
