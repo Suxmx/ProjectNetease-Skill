@@ -8,8 +8,8 @@ namespace Hoshino
     public class CollisionClip : ActionClip, IMultiLineClip
     {
         [SerializeField, HideInInspector] private float _length = 3f;
-        [LabelText("位置")]public Vector3 Position;
-        [LabelText("大小")]public float Scale;
+        [SkillField, LabelText("位置")]public Vector3 Position;
+        [SkillField, LabelText("大小")]public float Scale;
 
         public override float length
         {

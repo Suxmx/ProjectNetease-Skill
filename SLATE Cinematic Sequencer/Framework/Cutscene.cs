@@ -102,6 +102,9 @@ namespace Slate
         [SerializeField, HideInInspector]
         private float _playTimeMax = 4;
 
+        [SerializeField, HideInInspector]
+        private string _skillFilePath;
+
         [System.NonSerialized]
         private float _currentTime;
         [System.NonSerialized]
@@ -230,6 +233,12 @@ namespace Slate
         public float playTimeMax {
             get { return _playTimeMax; }
             set { _playTimeMax = Mathf.Clamp(value, playTimeMin, length); }
+        }
+
+        ///<summary>Skill file path for editor save/load</summary>
+        public string skillFilePath {
+            get { return _skillFilePath; }
+            set { _skillFilePath = value; }
         }
 
         ///<summary>The speed at which the cutscene is played back. Can be positive or negative. Not applicaple when Sampled manually without calling Play().</summary>

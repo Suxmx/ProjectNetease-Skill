@@ -34,6 +34,13 @@ namespace Hoshino
         public static SkillEditor current;
         public static event System.Action OnStopInEditor;
 
+        static bool isReloading;
+
+        static SkillEditor()
+        {
+            UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += () => isReloading = true;
+        }
+
         private Cutscene _cutscene;
         private int _cutsceneID;
 
@@ -103,6 +110,14 @@ namespace Hoshino
 
         [System.NonSerialized] private CutsceneTrack copyTrack;
 
+        [System.NonSerialized] private string newFileName = "新技能";
+
+        string currentFilePath
+        {
+            get => cutscene != null ? cutscene.skillFilePath : null;
+            set { if (cutscene != null) cutscene.skillFilePath = value; }
+        }
+
 
         [System.NonSerialized] private float timeInfoStart;
         [System.NonSerialized] private float timeInfoEnd;
@@ -128,6 +143,8 @@ namespace Hoshino
                 _cutscene = value;
                 if ( value != null ) {
                     _cutsceneID = value.GetInstanceID();
+                } else {
+                    _cutsceneID = 0;
                 }
             }
         }
@@ -307,13 +324,17 @@ namespace Hoshino
         ///----------------------------------------------------------------------------------------------
 
         ///<summary>Opens the editor :)</summary>
+        [MenuItem("Window/Hoshino/Skill Editor", false, 100)]
         public static void ShowWindow() { ShowWindow(null); }
         public static void ShowWindow(Cutscene newCutscene) {
             var window = EditorWindow.GetWindow(typeof(SkillEditor)) as SkillEditor;
-            var groups = newCutscene.groups.OfType<ActorGroup>();
-            foreach (var g in groups)
+            if (newCutscene != null)
             {
-                g.actor = g.gameObject;
+                var groups = newCutscene.groups.OfType<ActorGroup>();
+                foreach (var g in groups)
+                {
+                    g.actor = g.gameObject;
+                }
             }
             window.InitializeAll(newCutscene);
             window.Show();
@@ -364,6 +385,17 @@ namespace Hoshino
             if ( cutscene != null && !Application.isPlaying ) {
                 Stop(true);
             }
+
+            if (!isReloading && cutscene != null && !string.IsNullOrEmpty(currentFilePath) &&
+                SkillFileManager.HasUnsavedChanges(cutscene, currentFilePath))
+            {
+                var choice = EditorUtility.DisplayDialogComplex("未保存的更改",
+                    $"技能 [{cutscene.name}] 有未保存的更改。",
+                    "保存", "取消", "不保存");
+                if (choice == 0) SaveToFile();
+            }
+
+            isReloading = false;
             current = null;
         }
 
@@ -405,6 +437,15 @@ namespace Hoshino
                 InitClipWrappers();
                 if ( !Application.isPlaying ) {
                     Stop(true);
+                }
+                var path = currentFilePath;
+                if (!string.IsNullOrEmpty(path))
+                {
+                    titleContent = new GUIContent("技能编辑器", Styles.cutsceneIconOpen, System.IO.Path.GetFileNameWithoutExtension(path));
+                }
+                else
+                {
+                    titleContent = new GUIContent("技能编辑器", Styles.cutsceneIconOpen);
                 }
             }
 
@@ -784,6 +825,7 @@ namespace Hoshino
             ShowPlaybackControls(topLeftRect);
             ShowTimeInfo(topMiddleRect);
             ShowToolbar();
+            if (cutscene == null) return;
             DoScrubControls();
             DoZoomAndPan();
             
@@ -1177,6 +1219,21 @@ namespace Hoshino
             GUILayout.FlexibleSpace();
             
             GUI.color = Color.white;
+
+            {
+                var originalColor = GUI.color;
+                GUI.color = new Color(0.5f, 1f, 0.5f);
+                if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(50)))
+                {
+                    SaveToFile();
+                }
+                GUI.color = originalColor;
+            }
+
+            if (GUILayout.Button("返回选择", EditorStyles.toolbarButton, GUILayout.Width(65)))
+            {
+                GoBackToSelection();
+            }
 
             if ( GUILayout.Button(Slate.Styles.gearIcon, EditorStyles.toolbarButton, GUILayout.Width(26)) ) {
                 PreferencesWindow.Show(new Rect(screenWidth - 5 - 400, TOOLBAR_HEIGHT + 5, 400, screenHeight - TOOLBAR_HEIGHT - 50));
@@ -2261,11 +2318,6 @@ namespace Hoshino
         //...
         void ShowWelcome() {
 
-            if ( webMessage == null ) {
-                webMessage = string.Empty;
-                FetchWebMessageBoard();
-            }
-
             var bgRect = Rect.MinMaxRect(0, 0, screenWidth, screenHeight);
             GUI.color = Color.black.WithAlpha(0.1f);
             GUI.DrawTexture(bgRect, whiteTexture);
@@ -2277,89 +2329,80 @@ namespace Hoshino
                 isAboutButtonPressed = false;
             }
 
-            var label = string.Format("<size=24><b>{0}</b></size>", "Welcome to SLATE Cinematic Sequencer!");
-            var size = new GUIStyle("label").CalcSize(new GUIContent(label));
-            var titleRect = new Rect(0, 0, size.x, size.y);
-            titleRect.center = new Vector2(screenWidth / 2, size.y + 160);
-            GUI.Label(titleRect, label);
+            var titleRect = new Rect(0, 0, 300, 30);
+            titleRect.center = new Vector2(screenWidth / 2, 80);
 
-            var iconRect = new Rect(0, 0, 128, 128);
-            iconRect.x = titleRect.x;
-            iconRect.y = titleRect.y - 128;
-            EditorGUIUtility.AddCursorRect(iconRect, MouseCursor.Link);
-            if ( GUI.Button(iconRect, Styles.slateIcon, GUIStyle.none) ) {
-                Help.BrowseURL("https://slate.paradoxnotion.com");
+            GUI.Label(titleRect, "<size=20><b>技能编辑器</b></size>");
+
+            var panelRect = Rect.MinMaxRect(screenWidth * 0.2f, 120, screenWidth * 0.8f, screenHeight - 40);
+
+            GUILayout.BeginArea(panelRect);
+
+            var paths = SkillFileManager.GetFilePaths();
+
+            GUILayout.Label("已有技能文件:", EditorStyles.boldLabel);
+
+            if (paths.Count == 0)
+            {
+                GUILayout.Label("暂无文件，点击下方\"新建\"或\"选择文件\"");
             }
 
-            GUI.color = Color.white.WithAlpha(0.8f);
-            GUI.Label(new Rect(iconRect.x + 68, iconRect.yMax - 42, iconRect.width, 40), "v" + Cutscene.VERSION_NUMBER, Styles.leftLabel);
-            GUI.color = Color.white;
+            foreach (var path in paths)
+            {
+                var fileName = System.IO.Path.GetFileNameWithoutExtension(path);
 
-            var boardRect = Rect.MinMaxRect(iconRect.xMax, iconRect.y + 10, titleRect.xMax, iconRect.yMax - 10);
-            GUI.color = Color.black.WithAlpha(0.2f);
-            GUI.Box(boardRect, string.Empty);
-            GUI.color = Color.white;
-            GUI.Label(boardRect.ExpandBy(-5), webMessage);
+                GUILayout.BeginHorizontal(EditorStyles.helpBox);
 
-            var buttonsRect = Rect.MinMaxRect(titleRect.xMin, titleRect.yMax + 5, titleRect.xMax, screenHeight);
-            var openRect = new Rect(buttonsRect.xMax - 40, buttonsRect.yMin, 40, 40);
-            if ( !isAboutButtonPressed && GUI.Button(openRect, string.Empty) ) {
-                GenericMenu.MenuFunction2 SelectCutscene = (object cut) =>
+                if (GUILayout.Button(fileName, EditorStyles.label, GUILayout.ExpandWidth(true)))
                 {
-                    Selection.activeObject = (Cutscene)cut;
-                    EditorGUIUtility.PingObject((Cutscene)cut);
-                    InitializeAll((Cutscene)cut);
-                };
-
-                var cutscenes = FindObjectsByType<Cutscene>(FindObjectsSortMode.InstanceID);
-                var menu = new GenericMenu();
-                foreach ( Cutscene cut in cutscenes ) {
-                    menu.AddItem(new GUIContent(string.Format("[{0}]", cut.name)), cut == cutscene, SelectCutscene, cut);
+                    var cutscene = SkillFileManager.OpenFile(path);
+                    if (cutscene != null) InitializeAll(cutscene);
                 }
-                menu.ShowAsContext();
-                Event.current.Use();
-            }
 
-            GUILayout.BeginArea(buttonsRect);
-
-            if ( !isAboutButtonPressed ) {
-                GUI.backgroundColor = new Color(0.8f, 0.8f, 1, 1f);
-                if ( GUILayout.Button("New Cutscene", GUILayout.Height(40)) ) {
-                    InitializeAll(Commands.CreateCutscene());
+                if (GUILayout.Button("打开", GUILayout.Width(50)))
+                {
+                    var cutscene = SkillFileManager.OpenFile(path);
+                    if (cutscene != null) InitializeAll(cutscene);
                 }
-                GUI.backgroundColor = Color.white;
+
+                if (GUILayout.Button("删除", GUILayout.Width(50)))
+                {
+                    if (EditorUtility.DisplayDialog("确认删除", $"确定要删除 [{fileName}] 吗?", "删除", "取消"))
+                    {
+                        SkillFileManager.DeleteFile(path);
+                    }
+                }
+
+                GUILayout.EndHorizontal();
             }
 
-            if ( GUILayout.Button("Documentation", GUILayout.Height(40)) ) {
-                Help.BrowseURL("https://slate.paradoxnotion.com/documentation");
+            GUILayout.Space(16);
+
+            GUILayout.BeginHorizontal();
+            newFileName = GUILayout.TextField(newFileName, GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button("新建", GUILayout.Width(60)))
+            {
+                var cutscene = SkillFileManager.CreateNewFile(newFileName);
+                if (cutscene != null) InitializeAll(cutscene);
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8);
+
+            if (GUILayout.Button("选择已有文件...", GUILayout.Height(30)))
+            {
+                var selectedPath = EditorUtility.OpenFilePanel("选择技能JSON文件", SkillFileManager.DATA_FOLDER, "json");
+                if (!string.IsNullOrEmpty(selectedPath))
+                {
+                    var cutscene = SkillFileManager.OpenFile(selectedPath);
+                    if (cutscene != null) InitializeAll(cutscene);
+                }
             }
 
-            if ( GUILayout.Button("Downloads", GUILayout.Height(40)) ) {
-                Help.BrowseURL("https://slate.paradoxnotion.com/downloads");
-            }
-
-            if ( GUILayout.Button("Support Forums", GUILayout.Height(40)) ) {
-                Help.BrowseURL("https://slate.paradoxnotion.com/forums-page");
-            }
-
-            if ( GUILayout.Button("Discord Community", GUILayout.Height(40)) ) {
-                Help.BrowseURL("https://discord.gg/97q2Rjh");
-            }
-
-            if ( !isAboutButtonPressed && GUILayout.Button("Leave a Review", GUILayout.Height(40)) ) {
-                Help.BrowseURL("https://u3d.as/ozt");
-            }
-
-            GUI.color = Color.white.WithAlpha(0.5f);
-            GUILayout.Label("© 2016-2024 Paradox Notion. All rights reserved.");
-            GUI.color = Color.white;
-
-            GUILayout.EndArea();
-
-            if ( !isAboutButtonPressed ) { GUI.Label(openRect, "...", Styles.centerLabel); }
-
+            // Keep original about panel logic
             if ( isAboutButtonPressed && cutscene != null ) {
-                var backRect = new Rect(0, 0, titleRect.width, 20);
+                var backRect = new Rect(0, 0, 300, 20);
                 backRect.center = new Vector2(screenWidth / 2, 20);
                 GUI.backgroundColor = new Color(0.8f, 0.8f, 1, 1f);
                 if ( GUI.Button(backRect, "Close Panel") ) {
@@ -2367,6 +2410,8 @@ namespace Hoshino
                 }
                 GUI.backgroundColor = Color.white;
             }
+
+            GUILayout.EndArea();
         }
 
         //...
@@ -2976,6 +3021,55 @@ namespace Hoshino
             }
         }
 
+        void GoBackToSelection()
+        {  
+            if (cutscene != null && !string.IsNullOrEmpty(currentFilePath) &&
+                SkillFileManager.HasUnsavedChanges(cutscene, currentFilePath))
+            {
+                var choice = EditorUtility.DisplayDialogComplex("未保存的更改",
+                    $"技能 [{cutscene.name}] 有未保存的更改。",
+                    "保存", "取消", "不保存");
+                if (choice == 0)
+                {
+                    SaveToFile();
+                }
+                else if (choice == 1)
+                {
+                    return;
+                }
+            }
+
+            if (cutscene != null && !Application.isPlaying)
+            {
+                Stop(true);
+            }
+
+            var toDestroy = cutscene;
+            cutscene = null;
+            if (toDestroy != null)
+            {
+                DestroyImmediate(toDestroy.gameObject);
+            }
+            willRepaint = true;
+        }
+
+        void SaveToFile()
+        {
+            if (string.IsNullOrEmpty(currentFilePath))
+            {
+                var path = EditorUtility.SaveFilePanel("保存技能文件", "Assets/SkillData", cutscene.name, "json");
+                if (string.IsNullOrEmpty(path)) return;
+                currentFilePath = path;
+            }
+
+            var json = SkillSerializer.ExportToJson(cutscene);
+            System.IO.File.WriteAllText(currentFilePath, json);
+            if (currentFilePath.StartsWith("Assets"))
+            {
+                AssetDatabase.ImportAsset(currentFilePath);
+            }
+            ShowNotification(new GUIContent($"已保存: {System.IO.Path.GetFileName(currentFilePath)}"));
+        }
     }
 }
 
