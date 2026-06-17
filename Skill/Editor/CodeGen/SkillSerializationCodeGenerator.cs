@@ -193,9 +193,9 @@ namespace Hoshino
             sb.AppendLine("            return SkillGeneratedNodeDataBlob.TryGetExecutionDomain(clipId, out domain);");
             sb.AppendLine("        }");
             sb.AppendLine();
-            sb.AppendLine("        public bool TryGetExecutorTypeName(uint clipId, SkillNodeExecutionDomain domain, out string executorTypeName)");
+            sb.AppendLine("        public bool TryGetExecutorTypeName(uint clipId, out string executorTypeName)");
             sb.AppendLine("        {");
-            sb.AppendLine("            return SkillGeneratedExecutorBindings.TryGet(clipId, domain, out executorTypeName);");
+            sb.AppendLine("            return SkillGeneratedExecutorBindings.TryGet(clipId, out executorTypeName);");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -312,19 +312,15 @@ namespace Hoshino
             sb.AppendLine();
             sb.AppendLine("    public static class SkillGeneratedExecutorBindings");
             sb.AppendLine("    {");
-            sb.AppendLine("        public static bool TryGet(uint clipId, SkillNodeExecutionDomain domain, out string executorTypeName)");
+            sb.AppendLine("        public static bool TryGet(uint clipId, out string executorTypeName)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (clipId)");
             sb.AppendLine("            {");
             foreach (TypeInfo clip in clips.Where(c => c.Domain.HasValue && !string.IsNullOrEmpty(c.ExecutorTypeName)))
             {
                 sb.AppendLine($"                case SkillGeneratedIds.{GetIdName(clip)}:");
-                sb.AppendLine($"                    if (domain == SkillNodeExecutionDomain.{clip.Domain.Value})");
-                sb.AppendLine("                    {");
-                sb.AppendLine($"                        executorTypeName = \"{EscapeString(clip.ExecutorTypeName)}\";");
-                sb.AppendLine("                        return true;");
-                sb.AppendLine("                    }");
-                sb.AppendLine("                    break;");
+                sb.AppendLine($"                    executorTypeName = \"{EscapeString(clip.ExecutorTypeName)}\";");
+                sb.AppendLine("                    return true;");
             }
             sb.AppendLine("            }");
             sb.AppendLine("            executorTypeName = null;");

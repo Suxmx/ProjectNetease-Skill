@@ -11,7 +11,7 @@ namespace Hoshino
         void WriteBoxed(BinaryWriter writer, uint clipId, object data);
         bool TryRead<TData>(SkillDefinition skill, SkillRuntimeNode node, out TData data) where TData : struct;
         bool TryGetExecutionDomain(uint clipId, out SkillNodeExecutionDomain domain);
-        bool TryGetExecutorTypeName(uint clipId, SkillNodeExecutionDomain domain, out string executorTypeName);
+        bool TryGetExecutorTypeName(uint clipId, out string executorTypeName);
     }
 
     public static partial class SkillGeneratedSerializationServices
