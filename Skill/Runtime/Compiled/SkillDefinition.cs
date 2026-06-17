@@ -151,13 +151,13 @@ namespace Hoshino
             return definition;
         }
 
-        internal object GetCachedNodeData(int nodeId)
+        public object GetCachedNodeData(int nodeId)
         {
             EnsureNodeDataCache();
             return IsValidCacheIndex(nodeId) ? _nodeDataCache[nodeId] : null;
         }
 
-        internal void SetCachedNodeData(int nodeId, object value)
+        public void SetCachedNodeData(int nodeId, object value)
         {
             EnsureNodeDataCache();
             if (IsValidCacheIndex(nodeId))

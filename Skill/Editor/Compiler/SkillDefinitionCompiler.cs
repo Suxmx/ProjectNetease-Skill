@@ -110,14 +110,14 @@ namespace Hoshino
                     foreach (ClipEntry clip in track.clips)
                     {
                         SkillNodeExecutionDomain unusedDomain;
-                        if (!SkillGeneratedNodeDataBlob.TryGetExecutionDomain(clip.clipId, out unusedDomain))
+                        if (!SkillGeneratedSerializationServices.Runtime.TryGetExecutionDomain(clip.clipId, out unusedDomain))
                         {
                             Debug.LogWarning($"[SkillCompiler] No execution domain generated for clip id {clip.clipId}.");
                             continue;
                         }
 
                         int dataOffset = checked((int)dataWriter.BaseStream.Position);
-                        SkillGeneratedNodeDataBlob.WriteBoxed(dataWriter, clip.clipId, clip.customData);
+                        SkillGeneratedSerializationServices.Runtime.WriteBoxed(dataWriter, clip.clipId, clip.customData);
                         int dataLength = checked((int)dataWriter.BaseStream.Position - dataOffset);
                         nodes.Add(new SkillRuntimeNode
                         {
@@ -167,7 +167,7 @@ namespace Hoshino
             for (int i = 0; i < nodes.Length; i++)
             {
                 SkillRuntimeNode node = nodes[i];
-                SkillGeneratedNodeDataBlob.TryGetExecutionDomain(node.ClipId, out SkillNodeExecutionDomain domain);
+                SkillGeneratedSerializationServices.Runtime.TryGetExecutionDomain(node.ClipId, out SkillNodeExecutionDomain domain);
                 debugNodes[i] = new CompiledSkillDebugNode
                 {
                     nodeId = node.NodeId,

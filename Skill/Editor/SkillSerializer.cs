@@ -85,7 +85,7 @@ namespace Hoshino
 
         private static void WriteGroup(CutsceneGroup group, BinaryWriter writer)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetGroupId(group.GetType(), out uint groupId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetGroupId(group.GetType(), out uint groupId))
                 throw new InvalidOperationException($"No generated group id registered for {group.GetType().FullName}.");
 
             writer.Write(groupId);
@@ -118,7 +118,7 @@ namespace Hoshino
 
         private static void WriteTrack(CutsceneTrack track, BinaryWriter writer)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetTrackId(track.GetType(), out uint trackId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetTrackId(track.GetType(), out uint trackId))
                 throw new InvalidOperationException($"No generated track id registered for {track.GetType().FullName}.");
 
             writer.Write(trackId);
@@ -135,7 +135,7 @@ namespace Hoshino
 
         private static void WriteClip(ActionClip clip, BinaryWriter writer)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetClipId(clip.GetType(), out uint clipId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetClipId(clip.GetType(), out uint clipId))
                 throw new InvalidOperationException($"No generated clip id registered for {clip.GetType().FullName}.");
 
             writer.Write(clipId);
@@ -144,7 +144,7 @@ namespace Hoshino
             writer.Write(clip.blendIn);
             writer.Write(clip.blendOut);
             writer.Write(clip.GetLine());
-            SkillGeneratedEditorSerialization.WriteClipCustomData(writer, clipId, clip);
+            SkillGeneratedSerializationServices.Editor.WriteClipCustomData(writer, clipId, clip);
         }
 
         private static Cutscene ReadBinary(BinaryReader reader)
@@ -245,8 +245,8 @@ namespace Hoshino
                 line = reader.ReadInt32()
             };
 
-            entry.customData = SkillGeneratedEditorSerialization.ReadClipCustomData(reader, entry.clipId);
-            SkillGeneratedEditorSerialization.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
+            entry.customData = SkillGeneratedSerializationServices.Editor.ReadClipCustomData(reader, entry.clipId);
+            SkillGeneratedSerializationServices.Editor.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
             return entry;
         }
 
@@ -273,7 +273,7 @@ namespace Hoshino
 
         private static void ExportGroup(CutsceneGroup group, GroupEntry entry)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetGroupId(group.GetType(), out entry.groupId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetGroupId(group.GetType(), out entry.groupId))
                 throw new InvalidOperationException($"No generated group id registered for {group.GetType().FullName}.");
 
             entry.name = group.name;
@@ -300,7 +300,7 @@ namespace Hoshino
 
         private static void ExportTrack(CutsceneTrack track, TrackEntry entry)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetTrackId(track.GetType(), out entry.trackId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetTrackId(track.GetType(), out entry.trackId))
                 throw new InvalidOperationException($"No generated track id registered for {track.GetType().FullName}.");
 
             entry.name = track.name;
@@ -319,7 +319,7 @@ namespace Hoshino
 
         private static void ExportClip(ActionClip clip, ClipEntry entry)
         {
-            if (!SkillGeneratedEditorSerialization.TryGetClipId(clip.GetType(), out entry.clipId))
+            if (!SkillGeneratedSerializationServices.Editor.TryGetClipId(clip.GetType(), out entry.clipId))
                 throw new InvalidOperationException($"No generated clip id registered for {clip.GetType().FullName}.");
 
             entry.startTime = clip.startTime;
@@ -327,8 +327,8 @@ namespace Hoshino
             entry.blendIn = clip.blendIn;
             entry.blendOut = clip.blendOut;
             entry.line = clip.GetLine();
-            entry.customData = SkillGeneratedEditorSerialization.CaptureClipCustomData(entry.clipId, clip);
-            SkillGeneratedEditorSerialization.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
+            entry.customData = SkillGeneratedSerializationServices.Editor.CaptureClipCustomData(entry.clipId, clip);
+            SkillGeneratedSerializationServices.Editor.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
         }
 
         private static void ImportCutscene(Cutscene cutscene, SkillFileData data)
@@ -357,7 +357,7 @@ namespace Hoshino
 
         private static CutsceneGroup ImportGroup(Cutscene cutscene, GroupEntry entry)
         {
-            CutsceneGroup group = SkillGeneratedEditorSerialization.CreateGroup(entry.groupId, cutscene);
+            CutsceneGroup group = SkillGeneratedSerializationServices.Editor.CreateGroup(entry.groupId, cutscene);
             if (group == null)
                 throw new InvalidDataException($"No generated group factory for id {entry.groupId}.");
 
@@ -391,7 +391,7 @@ namespace Hoshino
 
         private static CutsceneTrack ImportTrack(CutsceneGroup group, TrackEntry entry)
         {
-            CutsceneTrack track = SkillGeneratedEditorSerialization.CreateTrack(entry.trackId, group);
+            CutsceneTrack track = SkillGeneratedSerializationServices.Editor.CreateTrack(entry.trackId, group);
             if (track == null)
                 throw new InvalidDataException($"No generated track factory for id {entry.trackId}.");
 
@@ -413,7 +413,7 @@ namespace Hoshino
 
         private static ActionClip ImportClip(CutsceneTrack track, ClipEntry entry)
         {
-            ActionClip clip = SkillGeneratedEditorSerialization.CreateClip(entry.clipId, track);
+            ActionClip clip = SkillGeneratedSerializationServices.Editor.CreateClip(entry.clipId, track);
             if (clip == null)
                 throw new InvalidDataException($"No generated clip factory for id {entry.clipId}.");
 
@@ -422,7 +422,7 @@ namespace Hoshino
             clip.blendIn = entry.blendIn;
             clip.blendOut = entry.blendOut;
             SetPrivateField<ActionClip, int>(clip, "_line", entry.line);
-            SkillGeneratedEditorSerialization.ApplyClipCustomData(entry.clipId, clip, entry.customData);
+            SkillGeneratedSerializationServices.Editor.ApplyClipCustomData(entry.clipId, clip, entry.customData);
             return clip;
         }
 

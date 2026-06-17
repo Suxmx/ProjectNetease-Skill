@@ -15,8 +15,10 @@ namespace Hoshino
 {
     public static class SkillSerializationCodeGenerator
     {
-        private const string RuntimeOutputPath = "Assets/Scripts/Skill/Skill/Generated/SkillGeneratedSerialization.cs";
-        private const string EditorOutputPath = "Assets/Scripts/Skill/Skill/Editor/Generated/SkillGeneratedEditorSerialization.cs";
+        private const string RuntimeOutputPath = "Assets/Scripts/Generated/Skill/Runtime/SkillGeneratedSerialization.cs";
+        private const string EditorOutputPath = "Assets/Scripts/Generated/Skill/Editor/SkillGeneratedEditorSerialization.cs";
+        private const string LegacyRuntimeOutputPath = "Assets/Scripts/Skill/Skill/Generated/SkillGeneratedSerialization.cs";
+        private const string LegacyEditorOutputPath = "Assets/Scripts/Skill/Skill/Editor/Generated/SkillGeneratedEditorSerialization.cs";
 
         private sealed class TypeInfo
         {
@@ -72,6 +74,11 @@ namespace Hoshino
             EnsureFolder(Path.GetDirectoryName(EditorOutputPath));
             File.WriteAllText(RuntimeOutputPath, GenerateRuntimeCode(groups, tracks, clips));
             File.WriteAllText(EditorOutputPath, GenerateEditorCode(groups, tracks, clips));
+            DeleteLegacyGeneratedFile(LegacyRuntimeOutputPath);
+            DeleteLegacyGeneratedFile(LegacyEditorOutputPath);
+            DeleteLegacyGeneratedFolderIfEmpty(Path.GetDirectoryName(LegacyRuntimeOutputPath));
+            DeleteLegacyGeneratedFolderIfEmpty(Path.GetDirectoryName(LegacyEditorOutputPath));
+            SkillGeneratedSerializationServices.Reset();
             AssetDatabase.Refresh();
         }
 
@@ -168,6 +175,30 @@ namespace Hoshino
 
             foreach (TypeInfo clip in clips)
                 AppendNodeDataStruct(sb, clip);
+
+            sb.AppendLine("    public sealed class SkillGeneratedRuntimeSerialization : ISkillGeneratedRuntimeSerialization");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public void WriteBoxed(BinaryWriter writer, uint clipId, object data)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            SkillGeneratedNodeDataBlob.WriteBoxed(writer, clipId, data);");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public bool TryRead<TData>(SkillDefinition skill, SkillRuntimeNode node, out TData data) where TData : struct");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return SkillGeneratedNodeDataBlob.TryRead(skill, node, out data);");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public bool TryGetExecutionDomain(uint clipId, out SkillNodeExecutionDomain domain)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return SkillGeneratedNodeDataBlob.TryGetExecutionDomain(clipId, out domain);");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public bool TryGetExecutorTypeName(uint clipId, SkillNodeExecutionDomain domain, out string executorTypeName)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            return SkillGeneratedExecutorBindings.TryGet(clipId, domain, out executorTypeName);");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
 
             sb.AppendLine("    public static class SkillGeneratedNodeDataBlob");
             sb.AppendLine("    {");
@@ -319,7 +350,7 @@ namespace Hoshino
             sb.AppendLine();
             sb.AppendLine("namespace Hoshino");
             sb.AppendLine("{");
-            sb.AppendLine("    public static class SkillGeneratedEditorSerialization");
+            sb.AppendLine("    public sealed class SkillGeneratedEditorSerialization : ISkillGeneratedEditorSerialization");
             sb.AppendLine("    {");
             AppendTryGetIdMethod(sb, "Group", groups);
             AppendTryGetIdMethod(sb, "Track", tracks);
@@ -347,7 +378,7 @@ namespace Hoshino
 
         private static void AppendTryGetIdMethod(StringBuilder sb, string kindName, List<TypeInfo> items)
         {
-            sb.AppendLine($"        public static bool TryGet{kindName}Id(Type type, out uint id)");
+            sb.AppendLine($"        public bool TryGet{kindName}Id(Type type, out uint id)");
             sb.AppendLine("        {");
             foreach (TypeInfo item in items)
                 sb.AppendLine($"            if (type == typeof({GetTypeName(item.Type)})) {{ id = SkillGeneratedIds.{GetIdName(item)}; return true; }}");
@@ -359,7 +390,7 @@ namespace Hoshino
 
         private static void AppendFactories(StringBuilder sb, List<TypeInfo> groups, List<TypeInfo> tracks, List<TypeInfo> clips)
         {
-            sb.AppendLine("        public static CutsceneGroup CreateGroup(uint id, Cutscene cutscene)");
+            sb.AppendLine("        public CutsceneGroup CreateGroup(uint id, Cutscene cutscene)");
             sb.AppendLine("        {");
             sb.AppendLine("            Type type = id switch");
             sb.AppendLine("            {");
@@ -376,7 +407,7 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static CutsceneTrack CreateTrack(uint id, CutsceneGroup group)");
+            sb.AppendLine("        public CutsceneTrack CreateTrack(uint id, CutsceneGroup group)");
             sb.AppendLine("        {");
             sb.AppendLine("            Type type = id switch");
             sb.AppendLine("            {");
@@ -395,7 +426,7 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static ActionClip CreateClip(uint id, CutsceneTrack track)");
+            sb.AppendLine("        public ActionClip CreateClip(uint id, CutsceneTrack track)");
             sb.AppendLine("        {");
             sb.AppendLine("            Type type = id switch");
             sb.AppendLine("            {");
@@ -413,7 +444,7 @@ namespace Hoshino
 
         private static void AppendCustomDataMethods(StringBuilder sb, List<TypeInfo> clips)
         {
-            sb.AppendLine("        public static object CaptureClipCustomData(uint clipId, ActionClip clip)");
+            sb.AppendLine("        public object CaptureClipCustomData(uint clipId, ActionClip clip)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (clipId)");
             sb.AppendLine("            {");
@@ -430,7 +461,7 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static void ApplyClipCustomData(uint clipId, ActionClip clip, object data)");
+            sb.AppendLine("        public void ApplyClipCustomData(uint clipId, ActionClip clip, object data)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (clipId)");
             sb.AppendLine("            {");
@@ -450,13 +481,13 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static void WriteClipCustomData(BinaryWriter writer, uint clipId, ActionClip clip)");
+            sb.AppendLine("        public void WriteClipCustomData(BinaryWriter writer, uint clipId, ActionClip clip)");
             sb.AppendLine("        {");
             sb.AppendLine("            WriteClipCustomDataObject(writer, clipId, CaptureClipCustomData(clipId, clip));");
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static object ReadClipCustomData(BinaryReader reader, uint clipId)");
+            sb.AppendLine("        public object ReadClipCustomData(BinaryReader reader, uint clipId)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (clipId)");
             sb.AppendLine("            {");
@@ -470,7 +501,7 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static void WriteClipCustomDataObject(BinaryWriter writer, uint clipId, object data)");
+            sb.AppendLine("        private static void WriteClipCustomDataObject(BinaryWriter writer, uint clipId, object data)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (clipId)");
             sb.AppendLine("            {");
@@ -490,7 +521,7 @@ namespace Hoshino
             sb.AppendLine("        }");
             sb.AppendLine();
 
-            sb.AppendLine("        public static void BuildDebugFields(uint clipId, object data, List<SkillCustomFieldDebugEntry> fields)");
+            sb.AppendLine("        public void BuildDebugFields(uint clipId, object data, List<SkillCustomFieldDebugEntry> fields)");
             sb.AppendLine("        {");
             sb.AppendLine("            fields.Clear();");
             sb.AppendLine("            switch (clipId)");
@@ -784,6 +815,32 @@ namespace Hoshino
                 return;
 
             Directory.CreateDirectory(folder);
+        }
+
+        private static void DeleteLegacyGeneratedFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return;
+
+            if (!AssetDatabase.DeleteAsset(path))
+                File.Delete(path);
+
+            string metaPath = path + ".meta";
+            if (File.Exists(metaPath))
+                File.Delete(metaPath);
+        }
+
+        private static void DeleteLegacyGeneratedFolderIfEmpty(string folder)
+        {
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
+                return;
+            if (Directory.EnumerateFileSystemEntries(folder).Any())
+                return;
+
+            Directory.Delete(folder);
+            string metaPath = folder + ".meta";
+            if (File.Exists(metaPath))
+                File.Delete(metaPath);
         }
     }
 }
