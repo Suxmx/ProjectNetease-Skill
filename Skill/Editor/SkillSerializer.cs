@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 
 using System;
+using System.IO;
 using System.Reflection;
 using Slate;
 using UnityEditor;
@@ -10,39 +11,246 @@ namespace Hoshino
 {
     public static class SkillSerializer
     {
+        private const uint BinaryMagic = 0x4B534F48; // HOSK
+        private const int BinaryVersion = 1;
+
         public static SkillFileData Export(Cutscene cutscene)
         {
-            var data = new SkillFileData();
+            SkillFileData data = new();
             ExportCutscene(cutscene, data);
             return data;
         }
 
-        public static string ExportToJson(Cutscene cutscene)
+        public static string ExportDebugJson(Cutscene cutscene)
         {
             return JsonUtility.ToJson(Export(cutscene), true);
         }
 
-        public static Cutscene Import(string json, string filePath = null)
+        public static byte[] ExportToBinary(Cutscene cutscene)
         {
-            var data = JsonUtility.FromJson<SkillFileData>(json);
-            if (data == null) return null;
-            return Import(data, filePath);
+            using MemoryStream stream = new();
+            using BinaryWriter writer = new(stream);
+            WriteBinary(cutscene, writer);
+            return stream.ToArray();
         }
 
-        public static Cutscene Import(SkillFileData data, string filePath = null)
+        public static void SaveBinary(Cutscene cutscene, string filePath)
         {
-            var cutscene = Cutscene.Create();
-            Undo.RegisterCreatedObjectUndo(cutscene.gameObject, "Import Skill");
-            ImportCutscene(cutscene, data);
-            if (!string.IsNullOrEmpty(filePath))
-            {
+            File.WriteAllBytes(filePath, ExportToBinary(cutscene));
+            File.WriteAllText(GetDebugJsonPath(filePath), ExportDebugJson(cutscene));
+        }
+
+        public static Cutscene ImportBinary(string filePath)
+        {
+            using FileStream stream = File.OpenRead(filePath);
+            using BinaryReader reader = new(stream);
+            Cutscene cutscene = ReadBinary(reader);
+            if (cutscene != null)
                 cutscene.skillFilePath = filePath;
-            }
-            EditorUtility.SetDirty(cutscene);
             return cutscene;
         }
 
-        static void ExportCutscene(Cutscene cutscene, SkillFileData data)
+        public static SkillFileData ReadFileData(string filePath)
+        {
+            using FileStream stream = File.OpenRead(filePath);
+            using BinaryReader reader = new(stream);
+            return ReadBinaryData(reader);
+        }
+
+        public static string GetDebugJsonPath(string filePath)
+        {
+            return $"{filePath}.json";
+        }
+
+        private static void WriteBinary(Cutscene cutscene, BinaryWriter writer)
+        {
+            writer.Write(BinaryMagic);
+            writer.Write(BinaryVersion);
+
+            writer.Write(GetPrivateEnumAsInt(cutscene, "_updateMode"));
+            writer.Write(GetPrivateEnumAsInt(cutscene, "_defaultWrapMode"));
+            writer.Write(GetPrivateEnumAsInt(cutscene, "_defaultStopMode"));
+            writer.Write(GetPrivateField<Cutscene, float>(cutscene, "_playbackSpeed"));
+            writer.Write(GetPrivateField<Cutscene, bool>(cutscene, "_playOnStart"));
+            writer.Write(cutscene.length);
+            writer.Write(cutscene.viewTimeMin);
+            writer.Write(cutscene.viewTimeMax);
+            writer.Write(cutscene.playTimeMin);
+            writer.Write(cutscene.playTimeMax);
+
+            writer.Write(cutscene.groups.Count);
+            foreach (CutsceneGroup group in cutscene.groups)
+                WriteGroup(group, writer);
+        }
+
+        private static void WriteGroup(CutsceneGroup group, BinaryWriter writer)
+        {
+            if (!SkillGeneratedEditorSerialization.TryGetGroupId(group.GetType(), out uint groupId))
+                throw new InvalidOperationException($"No generated group id registered for {group.GetType().FullName}.");
+
+            writer.Write(groupId);
+            writer.Write(group.name ?? string.Empty);
+            writer.Write(GetPrivateField<CutsceneGroup, bool>(group, "_active"));
+            writer.Write(GetPrivateField<CutsceneGroup, bool>(group, "_isLocked"));
+            writer.Write(GetPrivateField<CutsceneGroup, bool>(group, "_isCollapsed"));
+
+            if (group is ActorGroup actorGroup)
+            {
+                writer.Write(AssetDatabase.GetAssetPath(actorGroup.actor) ?? string.Empty);
+                writer.Write(GetPrivateEnumAsInt(actorGroup, "_referenceMode"));
+                writer.Write(GetPrivateEnumAsInt(actorGroup, "_initialCoordinates"));
+                WriteVector3(writer, GetPrivateField<ActorGroup, Vector3>(actorGroup, "_initialLocalPosition"));
+                WriteVector3(writer, GetPrivateField<ActorGroup, Vector3>(actorGroup, "_initialLocalRotation"));
+            }
+            else
+            {
+                writer.Write(string.Empty);
+                writer.Write(0);
+                writer.Write(0);
+                WriteVector3(writer, Vector3.zero);
+                WriteVector3(writer, Vector3.zero);
+            }
+
+            writer.Write(group.tracks.Count);
+            foreach (CutsceneTrack track in group.tracks)
+                WriteTrack(track, writer);
+        }
+
+        private static void WriteTrack(CutsceneTrack track, BinaryWriter writer)
+        {
+            if (!SkillGeneratedEditorSerialization.TryGetTrackId(track.GetType(), out uint trackId))
+                throw new InvalidOperationException($"No generated track id registered for {track.GetType().FullName}.");
+
+            writer.Write(trackId);
+            writer.Write(track.name ?? string.Empty);
+            WriteColor(writer, GetPrivateField<CutsceneTrack, Color>(track, "_color"));
+            writer.Write(GetPrivateField<CutsceneTrack, bool>(track, "_active"));
+            writer.Write(GetPrivateField<CutsceneTrack, bool>(track, "_isLocked"));
+            writer.Write(GetPrivateField<CutsceneTrack, bool>(track, "_isCollapsed"));
+
+            writer.Write(track.clips.Count);
+            foreach (ActionClip clip in track.clips)
+                WriteClip(clip, writer);
+        }
+
+        private static void WriteClip(ActionClip clip, BinaryWriter writer)
+        {
+            if (!SkillGeneratedEditorSerialization.TryGetClipId(clip.GetType(), out uint clipId))
+                throw new InvalidOperationException($"No generated clip id registered for {clip.GetType().FullName}.");
+
+            writer.Write(clipId);
+            writer.Write(clip.startTime);
+            writer.Write(clip.length);
+            writer.Write(clip.blendIn);
+            writer.Write(clip.blendOut);
+            writer.Write(clip.GetLine());
+            SkillGeneratedEditorSerialization.WriteClipCustomData(writer, clipId, clip);
+        }
+
+        private static Cutscene ReadBinary(BinaryReader reader)
+        {
+            SkillFileData data = ReadBinaryData(reader);
+            if (data == null)
+                return null;
+
+            Cutscene cutscene = Cutscene.Create();
+            Undo.RegisterCreatedObjectUndo(cutscene.gameObject, "Import Skill");
+            ImportCutscene(cutscene, data);
+            return cutscene;
+        }
+
+        private static SkillFileData ReadBinaryData(BinaryReader reader)
+        {
+            uint magic = reader.ReadUInt32();
+            if (magic != BinaryMagic)
+                throw new InvalidDataException("Invalid Hoshino skill binary magic.");
+
+            int version = reader.ReadInt32();
+            if (version != BinaryVersion)
+                throw new InvalidDataException($"Unsupported Hoshino skill binary version {version}.");
+
+            SkillFileData data = new()
+            {
+                version = version,
+                updateMode = reader.ReadInt32(),
+                wrapMode = reader.ReadInt32(),
+                stopMode = reader.ReadInt32(),
+                playbackSpeed = reader.ReadSingle(),
+                playOnStart = reader.ReadBoolean(),
+                length = reader.ReadSingle(),
+                viewTimeMin = reader.ReadSingle(),
+                viewTimeMax = reader.ReadSingle(),
+                playTimeMin = reader.ReadSingle(),
+                playTimeMax = reader.ReadSingle()
+            };
+
+            int groupCount = reader.ReadInt32();
+            for (int i = 0; i < groupCount; i++)
+                data.groups.Add(ReadGroup(reader));
+
+            return data;
+        }
+
+        private static GroupEntry ReadGroup(BinaryReader reader)
+        {
+            GroupEntry entry = new()
+            {
+                groupId = reader.ReadUInt32(),
+                name = reader.ReadString(),
+                active = reader.ReadBoolean(),
+                isLocked = reader.ReadBoolean(),
+                isCollapsed = reader.ReadBoolean(),
+                actorReference = reader.ReadString(),
+                referenceMode = reader.ReadInt32(),
+                initialCoordinates = reader.ReadInt32(),
+                initialLocalPosition = ReadVector3(reader),
+                initialLocalRotation = ReadVector3(reader)
+            };
+
+            int trackCount = reader.ReadInt32();
+            for (int i = 0; i < trackCount; i++)
+                entry.tracks.Add(ReadTrack(reader));
+
+            return entry;
+        }
+
+        private static TrackEntry ReadTrack(BinaryReader reader)
+        {
+            TrackEntry entry = new()
+            {
+                trackId = reader.ReadUInt32(),
+                name = reader.ReadString(),
+                color = ReadColor(reader),
+                active = reader.ReadBoolean(),
+                isLocked = reader.ReadBoolean(),
+                isCollapsed = reader.ReadBoolean()
+            };
+
+            int clipCount = reader.ReadInt32();
+            for (int i = 0; i < clipCount; i++)
+                entry.clips.Add(ReadClip(reader));
+
+            return entry;
+        }
+
+        private static ClipEntry ReadClip(BinaryReader reader)
+        {
+            ClipEntry entry = new()
+            {
+                clipId = reader.ReadUInt32(),
+                startTime = reader.ReadSingle(),
+                length = reader.ReadSingle(),
+                blendIn = reader.ReadSingle(),
+                blendOut = reader.ReadSingle(),
+                line = reader.ReadInt32()
+            };
+
+            entry.customData = SkillGeneratedEditorSerialization.ReadClipCustomData(reader, entry.clipId);
+            SkillGeneratedEditorSerialization.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
+            return entry;
+        }
+
+        private static void ExportCutscene(Cutscene cutscene, SkillFileData data)
         {
             data.updateMode = GetPrivateEnumAsInt(cutscene, "_updateMode");
             data.wrapMode = GetPrivateEnumAsInt(cutscene, "_defaultWrapMode");
@@ -55,17 +263,19 @@ namespace Hoshino
             data.playTimeMin = cutscene.playTimeMin;
             data.playTimeMax = cutscene.playTimeMax;
 
-            foreach (var group in cutscene.groups)
+            foreach (CutsceneGroup group in cutscene.groups)
             {
-                var groupEntry = new GroupEntry();
+                GroupEntry groupEntry = new();
                 ExportGroup(group, groupEntry);
                 data.groups.Add(groupEntry);
             }
         }
 
-        static void ExportGroup(CutsceneGroup group, GroupEntry entry)
+        private static void ExportGroup(CutsceneGroup group, GroupEntry entry)
         {
-            entry.typeName = group.GetType().AssemblyQualifiedName;
+            if (!SkillGeneratedEditorSerialization.TryGetGroupId(group.GetType(), out entry.groupId))
+                throw new InvalidOperationException($"No generated group id registered for {group.GetType().FullName}.");
+
             entry.name = group.name;
             entry.active = GetPrivateField<CutsceneGroup, bool>(group, "_active");
             entry.isLocked = GetPrivateField<CutsceneGroup, bool>(group, "_isLocked");
@@ -80,49 +290,48 @@ namespace Hoshino
                 entry.initialLocalRotation = GetPrivateField<ActorGroup, Vector3>(actorGroup, "_initialLocalRotation");
             }
 
-            foreach (var track in group.tracks)
+            foreach (CutsceneTrack track in group.tracks)
             {
-                var trackEntry = new TrackEntry();
+                TrackEntry trackEntry = new();
                 ExportTrack(track, trackEntry);
                 entry.tracks.Add(trackEntry);
             }
         }
 
-        static void ExportTrack(CutsceneTrack track, TrackEntry entry)
+        private static void ExportTrack(CutsceneTrack track, TrackEntry entry)
         {
-            entry.typeName = track.GetType().AssemblyQualifiedName;
+            if (!SkillGeneratedEditorSerialization.TryGetTrackId(track.GetType(), out entry.trackId))
+                throw new InvalidOperationException($"No generated track id registered for {track.GetType().FullName}.");
+
             entry.name = track.name;
             entry.color = GetPrivateField<CutsceneTrack, Color>(track, "_color");
             entry.active = GetPrivateField<CutsceneTrack, bool>(track, "_active");
             entry.isLocked = GetPrivateField<CutsceneTrack, bool>(track, "_isLocked");
             entry.isCollapsed = GetPrivateField<CutsceneTrack, bool>(track, "_isCollapsed");
 
-            foreach (var clip in track.clips)
+            foreach (ActionClip clip in track.clips)
             {
-                var clipEntry = new ClipEntry();
+                ClipEntry clipEntry = new();
                 ExportClip(clip, clipEntry);
                 entry.clips.Add(clipEntry);
             }
         }
 
-        static void ExportClip(ActionClip clip, ClipEntry entry)
+        private static void ExportClip(ActionClip clip, ClipEntry entry)
         {
-            entry.typeName = clip.GetType().AssemblyQualifiedName;
+            if (!SkillGeneratedEditorSerialization.TryGetClipId(clip.GetType(), out entry.clipId))
+                throw new InvalidOperationException($"No generated clip id registered for {clip.GetType().FullName}.");
+
             entry.startTime = clip.startTime;
             entry.length = clip.length;
             entry.blendIn = clip.blendIn;
             entry.blendOut = clip.blendOut;
             entry.line = clip.GetLine();
-
-            if (clip is ISkillClipSerializer serializer)
-            {
-                entry.customData = serializer.SerializeCustomData();
-            }
+            entry.customData = SkillGeneratedEditorSerialization.CaptureClipCustomData(entry.clipId, clip);
+            SkillGeneratedEditorSerialization.BuildDebugFields(entry.clipId, entry.customData, entry.customFields);
         }
 
-        // ---------- Import ----------
-
-        static void ImportCutscene(Cutscene cutscene, SkillFileData data)
+        private static void ImportCutscene(Cutscene cutscene, SkillFileData data)
         {
             SetPrivateField(cutscene, "_updateMode", (Cutscene.UpdateMode)data.updateMode);
             SetPrivateField(cutscene, "_defaultWrapMode", (Cutscene.WrapMode)data.wrapMode);
@@ -134,152 +343,130 @@ namespace Hoshino
             cutscene.viewTimeMax = data.viewTimeMax;
             cutscene.playTimeMin = data.playTimeMin;
             cutscene.playTimeMax = data.playTimeMax;
-
             cutscene.groups.Clear();
 
-            foreach (var groupEntry in data.groups)
+            foreach (GroupEntry groupEntry in data.groups)
             {
-                var group = ImportGroup(cutscene, groupEntry);
+                CutsceneGroup group = ImportGroup(cutscene, groupEntry);
                 if (group != null)
-                {
                     cutscene.groups.Add(group);
-                }
             }
+
+            cutscene.Validate();
         }
 
-        static CutsceneGroup ImportGroup(Cutscene cutscene, GroupEntry entry)
+        private static CutsceneGroup ImportGroup(Cutscene cutscene, GroupEntry entry)
         {
-            var type = Type.GetType(entry.typeName);
-            if (type == null || !typeof(CutsceneGroup).IsAssignableFrom(type))
-            {
-                Debug.LogWarning($"[SkillSerializer] 无法找到类型: {entry.typeName}");
-                return null;
-            }
+            CutsceneGroup group = SkillGeneratedEditorSerialization.CreateGroup(entry.groupId, cutscene);
+            if (group == null)
+                throw new InvalidDataException($"No generated group factory for id {entry.groupId}.");
 
-            var go = new GameObject(type.Name);
-            Undo.RegisterCreatedObjectUndo(go, "Import Skill Group");
-            Undo.SetTransformParent(go.transform, cutscene.groupsRoot, "Import Skill Group");
-            go.transform.localPosition = Vector3.zero;
-
-            var group = (CutsceneGroup)go.AddComponent(type);
             group.name = entry.name;
             SetPrivateField(group, "_active", entry.active);
             SetPrivateField(group, "_isLocked", entry.isLocked);
             SetPrivateField(group, "_isCollapsed", entry.isCollapsed);
 
-            if (group is ActorGroup actorGroup)
+            if (group is ActorGroup actorGroup && !string.IsNullOrEmpty(entry.actorReference))
             {
-                if (!string.IsNullOrEmpty(entry.actorReference))
+                GameObject actorAsset = AssetDatabase.LoadAssetAtPath<GameObject>(entry.actorReference);
+                if (actorAsset != null)
                 {
-                    var actorAsset = AssetDatabase.LoadAssetAtPath<GameObject>(entry.actorReference);
-                    if (actorAsset != null)
-                    {
-                        actorGroup.actor = actorAsset;
-                        SetPrivateField(actorGroup, "_referenceMode", (CutsceneGroup.ActorReferenceMode)entry.referenceMode);
-                        SetPrivateField(actorGroup, "_initialCoordinates", (CutsceneGroup.ActorInitialTransformation)entry.initialCoordinates);
-                        SetPrivateField(actorGroup, "_initialLocalPosition", entry.initialLocalPosition);
-                        SetPrivateField(actorGroup, "_initialLocalRotation", entry.initialLocalRotation);
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"[SkillSerializer] 未找到角色资源: {entry.actorReference}");
-                    }
+                    actorGroup.actor = actorAsset;
+                    SetPrivateField(actorGroup, "_referenceMode", (CutsceneGroup.ActorReferenceMode)entry.referenceMode);
+                    SetPrivateField(actorGroup, "_initialCoordinates", (CutsceneGroup.ActorInitialTransformation)entry.initialCoordinates);
+                    SetPrivateField(actorGroup, "_initialLocalPosition", entry.initialLocalPosition);
+                    SetPrivateField(actorGroup, "_initialLocalRotation", entry.initialLocalRotation);
                 }
             }
 
-            foreach (var trackEntry in entry.tracks)
+            foreach (TrackEntry trackEntry in entry.tracks)
             {
-                var track = ImportTrack(group, trackEntry);
+                CutsceneTrack track = ImportTrack(group, trackEntry);
                 if (track != null)
-                {
                     group.tracks.Add(track);
-                }
             }
 
             return group;
         }
 
-        static CutsceneTrack ImportTrack(CutsceneGroup group, TrackEntry entry)
+        private static CutsceneTrack ImportTrack(CutsceneGroup group, TrackEntry entry)
         {
-            var type = Type.GetType(entry.typeName);
-            if (type == null || !typeof(CutsceneTrack).IsAssignableFrom(type))
-            {
-                Debug.LogWarning($"[SkillSerializer] 无法找到类型: {entry.typeName}");
-                return null;
-            }
+            CutsceneTrack track = SkillGeneratedEditorSerialization.CreateTrack(entry.trackId, group);
+            if (track == null)
+                throw new InvalidDataException($"No generated track factory for id {entry.trackId}.");
 
-            var go = new GameObject(type.Name);
-            Undo.RegisterCreatedObjectUndo(go, "Import Skill Track");
-            Undo.SetTransformParent(go.transform, group.transform, "Import Skill Track");
-            go.transform.localPosition = Vector3.zero;
-
-            var track = (CutsceneTrack)go.AddComponent(type);
             track.name = entry.name;
             SetPrivateField(track, "_color", entry.color);
             SetPrivateField(track, "_active", entry.active);
             SetPrivateField(track, "_isLocked", entry.isLocked);
             SetPrivateField(track, "_isCollapsed", entry.isCollapsed);
 
-            foreach (var clipEntry in entry.clips)
+            foreach (ClipEntry clipEntry in entry.clips)
             {
-                var clip = ImportClip(track, clipEntry);
+                ActionClip clip = ImportClip(track, clipEntry);
                 if (clip != null)
-                {
                     track.clips.Add(clip);
-                }
             }
 
             return track;
         }
 
-        static ActionClip ImportClip(CutsceneTrack track, ClipEntry entry)
+        private static ActionClip ImportClip(CutsceneTrack track, ClipEntry entry)
         {
-            var type = Type.GetType(entry.typeName);
-            if (type == null || !typeof(ActionClip).IsAssignableFrom(type))
-            {
-                Debug.LogWarning($"[SkillSerializer] 无法找到类型: {entry.typeName}");
-                return null;
-            }
+            ActionClip clip = SkillGeneratedEditorSerialization.CreateClip(entry.clipId, track);
+            if (clip == null)
+                throw new InvalidDataException($"No generated clip factory for id {entry.clipId}.");
 
-            var clip = (ActionClip)Undo.AddComponent(track.gameObject, type);
-            Undo.RegisterCompleteObjectUndo(track, "Import Skill Clip");
             clip.length = entry.length;
             clip.startTime = entry.startTime;
             clip.blendIn = entry.blendIn;
             clip.blendOut = entry.blendOut;
             SetPrivateField<ActionClip, int>(clip, "_line", entry.line);
-
-            if (!string.IsNullOrEmpty(entry.customData) && clip is ISkillClipSerializer serializer)
-            {
-                serializer.DeserializeCustomData(entry.customData);
-            }
-
+            SkillGeneratedEditorSerialization.ApplyClipCustomData(entry.clipId, clip, entry.customData);
             return clip;
         }
 
-        // ---------- Helper ----------
-
-        static int GetPrivateEnumAsInt<TInstance>(TInstance instance, string fieldName)
+        private static int GetPrivateEnumAsInt<TInstance>(TInstance instance, string fieldName)
         {
-            var field = typeof(TInstance).GetField(fieldName,
-                BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field == null) return 0;
-            return System.Convert.ToInt32(field.GetValue(instance));
+            FieldInfo field = typeof(TInstance).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            return field == null ? 0 : Convert.ToInt32(field.GetValue(instance));
         }
 
-        static T GetPrivateField<TInstance, T>(TInstance instance, string fieldName)
+        private static T GetPrivateField<TInstance, T>(TInstance instance, string fieldName)
         {
-            var field = typeof(TInstance).GetField(fieldName,
-                BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field == null) return default;
-            return (T)field.GetValue(instance);
+            FieldInfo field = typeof(TInstance).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            return field == null ? default : (T)field.GetValue(instance);
         }
 
-        static void SetPrivateField<TInstance, T>(TInstance instance, string fieldName, T value)
+        private static void SetPrivateField<TInstance, T>(TInstance instance, string fieldName, T value)
         {
-            var field = typeof(TInstance).GetField(fieldName,
-                BindingFlags.NonPublic | BindingFlags.Instance);
+            FieldInfo field = typeof(TInstance).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
             field?.SetValue(instance, value);
+        }
+
+        private static void WriteVector3(BinaryWriter writer, Vector3 value)
+        {
+            writer.Write(value.x);
+            writer.Write(value.y);
+            writer.Write(value.z);
+        }
+
+        private static Vector3 ReadVector3(BinaryReader reader)
+        {
+            return new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        }
+
+        private static void WriteColor(BinaryWriter writer, Color value)
+        {
+            writer.Write(value.r);
+            writer.Write(value.g);
+            writer.Write(value.b);
+            writer.Write(value.a);
+        }
+
+        private static Color ReadColor(BinaryReader reader)
+        {
+            return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         }
     }
 }

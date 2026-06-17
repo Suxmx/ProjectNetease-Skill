@@ -5,6 +5,7 @@ namespace Hoshino
 {
     [Slate.Icon(typeof(BoxCollider))]
     [Attachable(typeof(ActorGroup))]
+    [SkillTrackType(102u)]
     public class CollisionTrack : CutsceneTrack
     {
         public CollisionTrack()

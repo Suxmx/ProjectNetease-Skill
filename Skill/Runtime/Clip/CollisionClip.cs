@@ -4,12 +4,19 @@ using UnityEngine;
 
 namespace Hoshino
 {
-    [Attachable(typeof(CollisionTrack))]
-    public class CollisionClip : SerializableActionClip<CollisionClipData>, IMultiLineClip
+    [SkillClipType(1004u)]
+    [Attachable(typeof(SkillActionTrack), typeof(CollisionTrack))]
+    public class CollisionClip : ActionClip, IMultiLineClip
     {
         [SerializeField, HideInInspector] private float _length = 3f;
-        [LabelText("位置")]public Vector3 Position;
-        [LabelText("大小")]public float Scale;
+        [SkillCustomData, LabelText("Shape")] public SkillHitShape Shape = SkillHitShape.Box;
+        [SkillCustomData, LabelText("Space")] public SkillSpace Space = SkillSpace.AimDirection;
+        [SkillCustomData, LabelText("Offset")] public Vector3 Offset = new(0f, 0.6f, 1.2f);
+        [SkillCustomData, LabelText("Half Extents")] public Vector3 HalfExtents = new(0.8f, 0.6f, 0.9f);
+        [SkillCustomData, LabelText("Radius")] public float Radius = 0.6f;
+        [SkillCustomData, LabelText("Distance")] public float Distance = 4f;
+        [SkillCustomData, LabelText("Hit Mask")] public LayerMask HitMask = ~0;
+        [SkillCustomData, LabelText("Damage")] public int Damage = 10;
 
         public override float length
         {
@@ -30,8 +37,12 @@ namespace Hoshino
             {
                 return;
             }
-            // Debug.Log($"Collide clip [{startTime}-{endTime}] draw at {cutscene.currentTime}");
-            SkillDraw.SphereWithOutline(Position , Scale, Color.yellow.WithAlpha(0.5f));
+
+            Color color = new(1f, 0.82f, 0.1f, 0.35f);
+            if (Shape == SkillHitShape.Sphere)
+                SkillDraw.SphereWithOutline(Offset, Mathf.Max(0.01f, Radius), color);
+            else if (Shape == SkillHitShape.Box)
+                SkillDraw.BoxWithOutline(Offset, Quaternion.identity, Vector3.Max(HalfExtents, Vector3.one * 0.01f), color);
         }
     }
 }

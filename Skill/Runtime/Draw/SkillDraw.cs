@@ -38,6 +38,13 @@ namespace Hoshino
             SolidSphere(center, radius, color);
         }
 
+        public static void BoxWithOutline(Vector3 center, Quaternion rotation, Vector3 halfExtents, Color color)
+        {
+            Vector3 size = halfExtents * 2f;
+            Draw.ingame.WireBox(center, rotation, size, Color.black);
+            Draw.ingame.SolidBox(center, rotation, size, color);
+        }
+
         public static void SolidSphere(Vector3 center, float radius, Color color)
         {
             var matrix = Matrix4x4.TRS(center, Quaternion.identity, Vector3.one * (radius * 2));

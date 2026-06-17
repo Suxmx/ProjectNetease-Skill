@@ -16,7 +16,7 @@ namespace Hoshino
     {
         private SkillFileManager() { }
         public const string DATA_FOLDER = "Assets/SkillData";
-        public const string FILE_EXTENSION = ".json";
+        public const string FILE_EXTENSION = ".skill";
 
         private static List<WeakReference<SkillFileRef>> trackedRefs = new();
 
@@ -43,10 +43,7 @@ namespace Hoshino
             filePath = AssetDatabase.GenerateUniqueAssetPath(filePath);
 
             var cutscene = Cutscene.Create();
-            var data = SkillSerializer.Export(cutscene);
-            var json = JsonUtility.ToJson(data, true);
-
-            File.WriteAllText(filePath, json);
+            SkillSerializer.SaveBinary(cutscene, filePath);
             EditorApplication.delayCall += () => AssetDatabase.Refresh();
 
             Object.DestroyImmediate(cutscene.gameObject);
@@ -56,10 +53,10 @@ namespace Hoshino
 
         public static Cutscene OpenFile(string filePath)
         {
+            filePath = NormalizeAssetPath(filePath);
             CleanupStaleRefs();
 
-            var json = File.ReadAllText(filePath);
-            var cutscene = SkillSerializer.Import(json, filePath);
+            var cutscene = SkillSerializer.ImportBinary(filePath);
             if (cutscene == null)
             {
                 EditorUtility.DisplayDialog("错误", "无法解析技能文件", "确定");
@@ -77,21 +74,25 @@ namespace Hoshino
 
         public static void DeleteFile(string filePath)
         {
+            filePath = NormalizeAssetPath(filePath);
             CleanupStaleRefs();
             DisposeOldRefs(filePath);
             AssetDatabase.DeleteAsset(filePath);
+            string debugPath = SkillSerializer.GetDebugJsonPath(filePath);
+            if (File.Exists(debugPath))
+                AssetDatabase.DeleteAsset(debugPath);
         }
 
         public static bool HasUnsavedChanges(Cutscene cutscene, string filePath)
         {
+            filePath = NormalizeAssetPath(filePath);
             if (cutscene == null || string.IsNullOrEmpty(filePath)) return false;
             if (!File.Exists(filePath)) return true;
 
-            var jsonOnDisk = File.ReadAllText(filePath);
-            var jsonCurrent = SkillSerializer.ExportToJson(cutscene);
-            if (jsonOnDisk != jsonCurrent)
+            byte[] bytesOnDisk = File.ReadAllBytes(filePath);
+            byte[] bytesCurrent = SkillSerializer.ExportToBinary(cutscene);
+            if (!bytesOnDisk.SequenceEqual(bytesCurrent))
             {
-                // LogDiff(jsonOnDisk, jsonCurrent);
                 return true;
             }
             return false;
@@ -114,6 +115,19 @@ namespace Hoshino
                 }
             }
             Debug.LogWarning($"[SkillFileManager] 内容相同但长度不同: 盘上={a.Length}, 当前={b.Length}");
+        }
+
+        public static string NormalizeAssetPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            path = path.Replace("\\", "/");
+            string dataPath = Application.dataPath.Replace("\\", "/");
+            if (path.StartsWith(dataPath + "/", StringComparison.OrdinalIgnoreCase))
+                return "Assets" + path.Substring(dataPath.Length);
+
+            return path;
         }
 
         static void DisposeOldRefs(string filePath)

@@ -27,7 +27,7 @@ namespace Hoshino
     [Serializable]
     public class GroupEntry
     {
-        public string typeName;
+        public uint groupId;
         public string name;
         public bool isCollapsed;
         public bool active = true;
@@ -43,7 +43,7 @@ namespace Hoshino
     [Serializable]
     public class TrackEntry
     {
-        public string typeName;
+        public uint trackId;
         public string name;
         public Color color;
         public bool active = true;
@@ -55,13 +55,21 @@ namespace Hoshino
     [Serializable]
     public class ClipEntry
     {
-        public string typeName;
+        public uint clipId;
         public float startTime;
         public float length;
         public float blendIn;
         public float blendOut;
         public int line = 1;
-        public string customData;
+        public List<SkillCustomFieldDebugEntry> customFields = new();
+        [NonSerialized] public object customData;
+    }
+
+    [Serializable]
+    public class SkillCustomFieldDebugEntry
+    {
+        public string name;
+        public string value;
     }
 }
 

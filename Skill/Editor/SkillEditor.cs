@@ -1103,7 +1103,7 @@ namespace Hoshino
 
                         DragAndDrop.AcceptDrag();
                         var newGroup = cutscene.AddGroup<ActorGroup>(go);
-                        newGroup.AddTrack<ActorActionTrack>("Action Track");
+                        newGroup.AddTrack<SkillActionTrack>("Action Track");
                         CutsceneUtility.selectedObject = newGroup;
                     }
                 }
@@ -1226,6 +1226,10 @@ namespace Hoshino
                 if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(50)))
                 {
                     SaveToFile();
+                }
+                if (GUILayout.Button("编译", EditorStyles.toolbarButton, GUILayout.Width(50)))
+                {
+                    CompileCurrentFile();
                 }
                 GUI.color = originalColor;
             }
@@ -2280,6 +2284,11 @@ namespace Hoshino
             foreach (var _info in EditorTools.GetTypeMetaDerivedFrom(typeof(CutsceneTrack)))
             {
                 var info = _info;
+                if (info.type.RTGetAttribute<SkillTrackTypeAttribute>(false) == null)
+                {
+                    continue;
+                }
+
                 if (info.attachableTypes == null || !info.attachableTypes.Contains(group.GetType()))
                 {
                     continue;
@@ -2301,7 +2310,10 @@ namespace Hoshino
                 }
             }
 
-            if (group.CanAddTrack(copyTrack))
+            var canPasteTrack = copyTrack != null &&
+                                copyTrack.GetType().RTGetAttribute<SkillTrackTypeAttribute>(false) != null &&
+                                group.CanAddTrack(copyTrack);
+            if (canPasteTrack)
             {
                 menu.AddItem(new GUIContent("Paste Track"), false, () => { group.DuplicateTrack(copyTrack); });
             }
@@ -2405,7 +2417,7 @@ namespace Hoshino
 
             if (GUILayout.Button("选择已有文件...", GUILayout.Height(30)))
             {
-                var selectedPath = EditorUtility.OpenFilePanel("选择技能JSON文件", SkillFileManager.DATA_FOLDER, "json");
+                var selectedPath = EditorUtility.OpenFilePanel("选择技能文件", SkillFileManager.DATA_FOLDER, "skill");
                 if (!string.IsNullOrEmpty(selectedPath))
                 {
                     var cutscene = SkillFileManager.OpenFile(selectedPath);
@@ -3066,22 +3078,50 @@ namespace Hoshino
             willRepaint = true;
         }
 
-        void SaveToFile()
+        bool SaveToFile()
         {
             if (string.IsNullOrEmpty(currentFilePath))
             {
-                var path = EditorUtility.SaveFilePanel("保存技能文件", "Assets/SkillData", cutscene.name, "json");
-                if (string.IsNullOrEmpty(path)) return;
-                currentFilePath = path;
+                var path = EditorUtility.SaveFilePanel("保存技能文件", "Assets/SkillData", cutscene.name, "skill");
+                if (string.IsNullOrEmpty(path)) return false;
+                currentFilePath = SkillFileManager.NormalizeAssetPath(path);
+            }
+            else
+            {
+                currentFilePath = SkillFileManager.NormalizeAssetPath(currentFilePath);
             }
 
-            var json = SkillSerializer.ExportToJson(cutscene);
-            System.IO.File.WriteAllText(currentFilePath, json);
+            SkillSerializer.SaveBinary(cutscene, currentFilePath);
             if (currentFilePath.StartsWith("Assets"))
             {
                 AssetDatabase.ImportAsset(currentFilePath);
+                AssetDatabase.ImportAsset(SkillSerializer.GetDebugJsonPath(currentFilePath));
             }
             ShowNotification(new GUIContent($"已保存: {System.IO.Path.GetFileName(currentFilePath)}"));
+            return true;
+        }
+
+        void CompileCurrentFile()
+        {
+            if (!SaveToFile())
+                return;
+
+            try
+            {
+                string compiledPath = SkillDefinitionCompiler.CompileFile(currentFilePath);
+                AssetDatabase.ImportAsset(compiledPath);
+
+                string debugPath = SkillDefinitionCompiler.GetCompiledDebugJsonPath(compiledPath);
+                if (System.IO.File.Exists(debugPath))
+                    AssetDatabase.ImportAsset(debugPath);
+
+                ShowNotification(new GUIContent($"已编译: {System.IO.Path.GetFileName(compiledPath)}"));
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+                ShowNotification(new GUIContent("技能编译失败，查看 Console"));
+            }
         }
     }
 }
