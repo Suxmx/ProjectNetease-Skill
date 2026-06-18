@@ -10,7 +10,6 @@ namespace Hoshino
 {
     public static class SkillDefinitionCompiler
     {
-        private const int DefaultTickRate = 60;
         private const int CompiledVersion = 1;
         private const string OutputFolder = "Assets/SkillData/Compiled";
         private const string OutputExtension = ".bytes";
@@ -63,7 +62,7 @@ namespace Hoshino
 
             string skillKey = Path.GetFileNameWithoutExtension(sourcePath);
             int skillId = Animator.StringToHash(skillKey);
-            int lengthTicks = SecondsToTicks(fileData.length);
+            int lengthTicks = SkillTickUtility.SecondsToTicks(fileData.length);
             SkillRuntimeNode[] nodes;
             byte[] nodeDataBlob;
             using (MemoryStream dataStream = new())
@@ -75,7 +74,7 @@ namespace Hoshino
             }
 
             SkillDefinition definition = new();
-            definition.Initialize(skillId, skillKey, CompiledVersion, DefaultTickRate, lengthTicks, nodes, nodeDataBlob);
+            definition.Initialize(skillId, skillKey, CompiledVersion, SkillTickUtility.DefaultTickRate, lengthTicks, nodes, nodeDataBlob);
 
             string outputPath = BuildOutputPath(sourcePath);
             File.WriteAllBytes(outputPath, definition.ToBytes());
@@ -111,7 +110,7 @@ namespace Hoshino
                     {
                         if (!SkillGeneratedSerializationServices.Runtime.IsClipKnown(clip.clipId))
                         {
-                            Debug.LogWarning($"[SkillCompiler] No generated serialization for clip id {clip.clipId}.");
+                            Debug.LogError($"[SkillCompiler] No generated serialization for clip id {clip.clipId}.");
                             continue;
                         }
 
@@ -124,8 +123,8 @@ namespace Hoshino
                             SourceTrackName = track.name,
                             ClipId = clip.clipId,
                             SourceLine = clip.line,
-                            StartTick = SecondsToTicks(clip.startTime),
-                            EndTick = SecondsToTicks(clip.startTime + clip.length),
+                            StartTick = SkillTickUtility.SecondsToTicks(clip.startTime),
+                            EndTick = SkillTickUtility.SecondsToTicks(clip.startTime + clip.length),
                             DataOffset = dataOffset,
                             DataLength = dataLength
                         });
@@ -189,11 +188,6 @@ namespace Hoshino
                 nodeDataBlobLength = definition.NodeDataBlob.Length,
                 nodes = debugNodes
             };
-        }
-
-        private static int SecondsToTicks(float seconds)
-        {
-            return Mathf.Max(0, Mathf.RoundToInt(seconds * DefaultTickRate));
         }
 
         private static string BuildOutputPath(string sourcePath)
