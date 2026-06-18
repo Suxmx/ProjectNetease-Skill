@@ -109,10 +109,9 @@ namespace Hoshino
 
                     foreach (ClipEntry clip in track.clips)
                     {
-                        SkillNodeExecutionDomain unusedDomain;
-                        if (!SkillGeneratedSerializationServices.Runtime.TryGetExecutionDomain(clip.clipId, out unusedDomain))
+                        if (!SkillGeneratedSerializationServices.Runtime.IsClipKnown(clip.clipId))
                         {
-                            Debug.LogWarning($"[SkillCompiler] No execution domain generated for clip id {clip.clipId}.");
+                            Debug.LogWarning($"[SkillCompiler] No generated serialization for clip id {clip.clipId}.");
                             continue;
                         }
 
@@ -167,13 +166,11 @@ namespace Hoshino
             for (int i = 0; i < nodes.Length; i++)
             {
                 SkillRuntimeNode node = nodes[i];
-                SkillGeneratedSerializationServices.Runtime.TryGetExecutionDomain(node.ClipId, out SkillNodeExecutionDomain domain);
                 debugNodes[i] = new CompiledSkillDebugNode
                 {
                     nodeId = node.NodeId,
                     sourceTrackName = node.SourceTrackName,
                     clipId = node.ClipId,
-                    domain = domain.ToString(),
                     sourceLine = node.SourceLine,
                     startTick = node.StartTick,
                     endTick = node.EndTick,
@@ -244,7 +241,6 @@ namespace Hoshino
             public int nodeId;
             public string sourceTrackName;
             public uint clipId;
-            public string domain;
             public int sourceLine;
             public int startTick;
             public int endTick;
