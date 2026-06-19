@@ -62,7 +62,6 @@ namespace Hoshino
 
             string skillKey = Path.GetFileNameWithoutExtension(sourcePath);
             int skillId = Animator.StringToHash(skillKey);
-            int lengthTicks = SkillTickUtility.SecondsToTicks(fileData.length);
             SkillRuntimeNode[] nodes;
             byte[] nodeDataBlob;
             using (MemoryStream dataStream = new())
@@ -73,8 +72,23 @@ namespace Hoshino
                 nodeDataBlob = dataStream.ToArray();
             }
 
+            // --- 技能长度取最后一个节点结束的 tick，而非编辑器设定的总长度 ---
+            int lengthTicks = 0;
+            for (int i = 0; i < nodes.Length; i++)
+                lengthTicks = Mathf.Max(lengthTicks, nodes[i].EndTick);
+
+            SkillRuntimeSpecialData[] specialDatas;
+            byte[] specialDataBlob;
+            using (MemoryStream sdStream = new())
+            using (BinaryWriter sdWriter = new(sdStream))
+            {
+                specialDatas = BuildSpecialDatas(fileData, sdWriter);
+                sdWriter.Flush();
+                specialDataBlob = sdStream.ToArray();
+            }
+
             SkillDefinition definition = new();
-            definition.Initialize(skillId, skillKey, CompiledVersion, SkillTickUtility.DefaultTickRate, lengthTicks, nodes, nodeDataBlob);
+            definition.Initialize(skillId, skillKey, CompiledVersion, SkillTickUtility.DefaultTickRate, lengthTicks, nodes, nodeDataBlob, specialDatas, specialDataBlob);
 
             string outputPath = BuildOutputPath(sourcePath);
             File.WriteAllBytes(outputPath, definition.ToBytes());
@@ -139,6 +153,35 @@ namespace Hoshino
             });
 
             return nodes.ToArray();
+        }
+
+        /// <summary>构建技能级特殊数据（数据黑板）的运行时条目 + blob。</summary>
+        private static SkillRuntimeSpecialData[] BuildSpecialDatas(SkillFileData fileData, BinaryWriter dataWriter)
+        {
+            List<SkillRuntimeSpecialData> entries = new();
+            int specialDataId = 1;
+
+            foreach (SpecialDataEntry entry in fileData.specialDatas ?? new())
+            {
+                if (!SkillGeneratedSerializationServices.Runtime.IsSpecialDataKnown(entry.dataId))
+                {
+                    Debug.LogError($"[SkillCompiler] No generated serialization for special data id {entry.dataId}.");
+                    continue;
+                }
+
+                int dataOffset = checked((int)dataWriter.BaseStream.Position);
+                SkillGeneratedSerializationServices.Runtime.WriteSpecialDataBoxed(dataWriter, entry.dataId, entry.customData);
+                int dataLength = checked((int)dataWriter.BaseStream.Position - dataOffset);
+                entries.Add(new SkillRuntimeSpecialData
+                {
+                    SpecialDataId = specialDataId++,
+                    SpecialDataTypeId = entry.dataId,
+                    DataOffset = dataOffset,
+                    DataLength = dataLength
+                });
+            }
+
+            return entries.ToArray();
         }
 
         private static void WriteOrDeleteDebugJson(string outputPath, SkillDefinition definition)

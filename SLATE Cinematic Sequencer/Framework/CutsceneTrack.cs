@@ -68,6 +68,13 @@ namespace Slate
         public IDirectable parent { get; private set; }
         void IDirectable.RawUpdate(){}
 
+        /// <summary>透传 FixedTick 到所有子 clip。</summary>
+        void IDirectable.FixedTick(int tick, int totalTicks)
+        {
+            for (int i = 0; i < clips.Count; i++)
+                ((IDirectable)clips[i]).FixedTick(tick, totalTicks);
+        }
+
         ///<summary>Editor is collapsed?</summary>
         virtual public bool isCollapsed
         {

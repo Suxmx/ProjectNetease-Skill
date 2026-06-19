@@ -29,6 +29,16 @@ namespace Hoshino
         }
     }
 
+    /// <summary>技能级特殊数据运行时条目（数据黑板编译产物）。</summary>
+    [Serializable]
+    public struct SkillRuntimeSpecialData
+    {
+        public int SpecialDataId;
+        public uint SpecialDataTypeId;
+        public int DataOffset;
+        public int DataLength;
+    }
+
     [Serializable]
     public sealed class SkillDefinition
     {
@@ -42,7 +52,10 @@ namespace Hoshino
         private int _lengthTicks;
         private SkillRuntimeNode[] _nodes = Array.Empty<SkillRuntimeNode>();
         private byte[] _nodeDataBlob = Array.Empty<byte>();
+        private SkillRuntimeSpecialData[] _specialDatas = Array.Empty<SkillRuntimeSpecialData>();
+        private byte[] _specialDataBlob = Array.Empty<byte>();
         [NonSerialized] private object[] _nodeDataCache;
+        [NonSerialized] private object[] _specialDataCache;
 
         public int SkillId => _skillId;
         public string SkillKey => _skillKey;
@@ -51,8 +64,10 @@ namespace Hoshino
         public int LengthTicks => _lengthTicks;
         public SkillRuntimeNode[] Nodes => _nodes;
         public byte[] NodeDataBlob => _nodeDataBlob ?? Array.Empty<byte>();
+        public SkillRuntimeSpecialData[] SpecialDatas => _specialDatas;
+        public byte[] SpecialDataBlob => _specialDataBlob ?? Array.Empty<byte>();
 
-        public void Initialize(int skillId, string skillKey, int version, int sourceTickRate, int lengthTicks, SkillRuntimeNode[] nodes, byte[] nodeDataBlob)
+        public void Initialize(int skillId, string skillKey, int version, int sourceTickRate, int lengthTicks, SkillRuntimeNode[] nodes, byte[] nodeDataBlob, SkillRuntimeSpecialData[] specialDatas, byte[] specialDataBlob)
         {
             _skillId = skillId;
             _skillKey = skillKey;
@@ -61,7 +76,10 @@ namespace Hoshino
             _lengthTicks = Mathf.Max(0, lengthTicks);
             _nodes = nodes ?? Array.Empty<SkillRuntimeNode>();
             _nodeDataBlob = nodeDataBlob ?? Array.Empty<byte>();
+            _specialDatas = specialDatas ?? Array.Empty<SkillRuntimeSpecialData>();
+            _specialDataBlob = specialDataBlob ?? Array.Empty<byte>();
             _nodeDataCache = null;
+            _specialDataCache = null;
         }
 
         public byte[] ToBytes()
@@ -92,6 +110,22 @@ namespace Hoshino
             byte[] blob = _nodeDataBlob ?? Array.Empty<byte>();
             writer.Write(blob.Length);
             writer.Write(blob);
+
+            // --- specialDatas 段 ---
+            writer.Write(_specialDatas.Length);
+            for (int i = 0; i < _specialDatas.Length; i++)
+            {
+                SkillRuntimeSpecialData sd = _specialDatas[i];
+                writer.Write(sd.SpecialDataId);
+                writer.Write(sd.SpecialDataTypeId);
+                writer.Write(sd.DataOffset);
+                writer.Write(sd.DataLength);
+            }
+
+            byte[] sdBlob = _specialDataBlob ?? Array.Empty<byte>();
+            writer.Write(sdBlob.Length);
+            writer.Write(sdBlob);
+
             writer.Flush();
             return stream.ToArray();
         }
@@ -147,6 +181,30 @@ namespace Hoshino
 
             definition._nodeDataBlob = reader.ReadBytes(blobLength);
             definition._nodeDataCache = null;
+
+            // --- specialDatas 段 ---
+            int sdCount = reader.ReadInt32();
+            if (sdCount < 0)
+                throw new InvalidDataException($"Invalid compiled skill special data count {sdCount}.");
+
+            definition._specialDatas = new SkillRuntimeSpecialData[sdCount];
+            for (int i = 0; i < sdCount; i++)
+            {
+                definition._specialDatas[i] = new SkillRuntimeSpecialData
+                {
+                    SpecialDataId = reader.ReadInt32(),
+                    SpecialDataTypeId = reader.ReadUInt32(),
+                    DataOffset = reader.ReadInt32(),
+                    DataLength = reader.ReadInt32()
+                };
+            }
+
+            int sdBlobLength = reader.ReadInt32();
+            if (sdBlobLength < 0 || stream.Position + sdBlobLength > stream.Length)
+                throw new InvalidDataException($"Invalid compiled skill special data blob length {sdBlobLength}.");
+
+            definition._specialDataBlob = reader.ReadBytes(sdBlobLength);
+            definition._specialDataCache = null;
             return definition;
         }
 
@@ -183,6 +241,43 @@ namespace Hoshino
         private bool IsValidCacheIndex(int nodeId)
         {
             return nodeId >= 0 && _nodeDataCache != null && nodeId < _nodeDataCache.Length;
+        }
+
+        /// <summary>获取特殊数据缓存（按 SpecialDataId 索引）。</summary>
+        public object GetCachedSpecialData(int specialDataId)
+        {
+            EnsureSpecialDataCache();
+            return IsValidSpecialDataCacheIndex(specialDataId) ? _specialDataCache[specialDataId] : null;
+        }
+
+        /// <summary>设置特殊数据缓存。</summary>
+        public void SetCachedSpecialData(int specialDataId, object value)
+        {
+            EnsureSpecialDataCache();
+            if (IsValidSpecialDataCacheIndex(specialDataId))
+                _specialDataCache[specialDataId] = value;
+        }
+
+        private void EnsureSpecialDataCache()
+        {
+            int cacheSize = GetSpecialDataCacheSize();
+            if (_specialDataCache != null && _specialDataCache.Length == cacheSize)
+                return;
+
+            _specialDataCache = new object[cacheSize];
+        }
+
+        private int GetSpecialDataCacheSize()
+        {
+            int maxId = 0;
+            for (int i = 0; i < _specialDatas.Length; i++)
+                maxId = Mathf.Max(maxId, _specialDatas[i].SpecialDataId);
+            return maxId + 1;
+        }
+
+        private bool IsValidSpecialDataCacheIndex(int specialDataId)
+        {
+            return specialDataId >= 0 && _specialDataCache != null && specialDataId < _specialDataCache.Length;
         }
     }
 }

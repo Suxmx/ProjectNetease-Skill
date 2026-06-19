@@ -32,6 +32,9 @@ namespace Slate
         void ReverseEnter();
         void Reverse();
 
+        /// <summary>固定 tick 回调，仅在编辑器 tick 模式下由 SkillEditor 调度。</summary>
+        void FixedTick(int tick, int totalTicks);
+
         void RootEnabled();
         void RootUpdated(float time, float previousTime);
         void RootDisabled();

@@ -89,6 +89,10 @@ namespace Hoshino
         [System.NonSerialized] private float lastStartPlayTime;
         [System.NonSerialized] private float editorPreviousTime;
 
+        // --- tick 模式（持久化到 Prefs）---
+        private int _tickRate => Prefs.skillTickRate;
+        [System.NonSerialized] private float _tickAccumulator;
+
         [System.NonSerialized] private Vector2? multiSelectStartPos;
         [System.NonSerialized] private List<ActionClipWrapper> multiSelection;
         [System.NonSerialized] private Rect preMultiSelectionRetimeMinMax;
@@ -330,14 +334,53 @@ namespace Hoshino
             var window = EditorWindow.GetWindow(typeof(SkillEditor)) as SkillEditor;
             if (newCutscene != null)
             {
-                var groups = newCutscene.groups.OfType<ActorGroup>();
-                foreach (var g in groups)
-                {
-                    g.actor = g.gameObject;
-                }
+                window.EnsureDefaultActors(newCutscene);
             }
             window.InitializeAll(newCutscene);
             window.Show();
+        }
+
+        /// <summary>为每个无 actor 的 ActorGroup 创建默认白色胶囊体子物体并赋为 actor。</summary>
+        private void EnsureDefaultActors(Cutscene cutscene)
+        {
+            if (cutscene == null)
+                return;
+
+            foreach (var g in cutscene.groups.OfType<ActorGroup>())
+            {
+                if (g.actor != null)
+                    continue;
+
+                GameObject capsule = CreateDefaultCapsule(g.name + "_Actor");
+                // --- 挂到 Cutscene 根物体下，不受 ActorGroup active 状态影响 ---
+                capsule.transform.SetParent(cutscene.transform, false);
+                capsule.transform.localPosition = new Vector3(0f, 1f, 0f);
+                g.actor = capsule;
+            }
+        }
+
+        /// <summary>创建一个白色胶囊体 GameObject（编辑器预览用）。</summary>
+        private static GameObject CreateDefaultCapsule(string name)
+        {
+            // --- 用 CreatePrimitive 直接生成完整 GameObject（自带 mesh/material/collider，适配任何渲染管线）---
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            go.name = name;
+
+            // --- 设置白色 ---
+            var renderer = go.GetComponent<MeshRenderer>();
+            if (renderer.sharedMaterial != null)
+            {
+                var mat = new Material(renderer.sharedMaterial);
+                mat.color = Color.white;
+                renderer.sharedMaterial = mat;
+            }
+
+            // --- Collider 设为 trigger（预览用，不参与物理）---
+            var collider = go.GetComponent<CapsuleCollider>();
+            if (collider != null)
+                collider.isTrigger = true;
+
+            return go;
         }
 
         //...
@@ -427,11 +470,14 @@ namespace Hoshino
                 if ( !Application.isPlaying ) {
                     Stop(true);
                 }
+                // --- 清理旧 cutscene 的数据黑板缓存 ---
+                SkillBlackboardCache.Clear(cutscene);
             }
 
             //set the new
             if ( newCutscene != null ) {
                 cutscene = newCutscene;
+                EnsureDefaultActors(cutscene);
                 CutsceneUtility.selectedObject = null;
                 multiSelection = null;
                 InitClipWrappers();
@@ -644,6 +690,25 @@ namespace Hoshino
                 endTime = Mathf.Min(length, cutscene.playTimeMax);
             }
 
+            // --- tick 模式：固定步进 + FixedTick 调度 ---
+            if (_tickRate > 0)
+            {
+                float tickInterval = 1f / _tickRate;
+                _tickAccumulator += delta;
+                while (_tickAccumulator >= tickInterval)
+                {
+                    _tickAccumulator -= tickInterval;
+                    float prevTime = cutscene.currentTime;
+                    cutscene.currentTime += editorPlaybackState == EditorPlaybackState.PlayingForwards ? tickInterval : -tickInterval;
+                    cutscene.currentTime = Mathf.Clamp(cutscene.currentTime, startTime, endTime);
+                    cutscene.Sample();
+                    int tick = Mathf.FloorToInt(cutscene.currentTime * _tickRate);
+                    int totalTicks = Mathf.FloorToInt(endTime * _tickRate);
+                    DispatchFixedTick(tick, totalTicks);
+                }
+                return;
+            }
+
             //Playback.
             if ( cutscene.currentTime >= endTime && editorPlaybackState == EditorPlaybackState.PlayingForwards ) {
                 if ( editorPlaybackWrapMode == Cutscene.WrapMode.Once ) {
@@ -664,6 +729,21 @@ namespace Hoshino
 
             cutscene.currentTime += editorPlaybackState == EditorPlaybackState.PlayingForwards ? delta : -delta;
             cutscene.currentTime = Mathf.Clamp(cutscene.currentTime, startTime, endTime);
+        }
+
+        /// <summary>遍历所有 active directable 调 FixedTick（tick 模式下每 tick 调一次）。</summary>
+        private void DispatchFixedTick(int tick, int totalTicks)
+        {
+            if (cutscene == null)
+                return;
+
+            for (int g = 0; g < cutscene.groups.Count; g++)
+            {
+                Slate.CutsceneGroup group = cutscene.groups[g];
+                if (!group.isActive)
+                    continue;
+                ((Slate.IDirectable)group).FixedTick(tick, totalTicks);
+            }
         }
 
 
@@ -1147,7 +1227,17 @@ namespace Hoshino
                 menu.AddItem(new GUIContent("60 FPS"), false, () => { Prefs.timeStepMode = Prefs.TimeStepMode.Frames; Prefs.frameRate = 60; });
                 menu.ShowAsContext();
             }
-            
+
+            // --- tick 模式下拉 ---
+            if (GUILayout.Button("Tick: " + (_tickRate == 0 ? "关" : _tickRate + "/s"), EditorStyles.toolbarDropDown, GUILayout.Width(90)))
+            {
+                var tickMenu = new GenericMenu();
+                tickMenu.AddItem(new GUIContent("关"), _tickRate == 0, () => { Prefs.skillTickRate = 0; });
+                tickMenu.AddItem(new GUIContent("30/s"), _tickRate == 30, () => { Prefs.skillTickRate = 30; _tickAccumulator = 0; });
+                tickMenu.AddItem(new GUIContent("60/s"), _tickRate == 60, () => { Prefs.skillTickRate = 60; _tickAccumulator = 0; });
+                tickMenu.ShowAsContext();
+            }
+
             // play control
             GUILayout.FlexibleSpace();
             Rect lastRect;
@@ -1391,6 +1481,11 @@ namespace Hoshino
             if (GUILayout.Button("添加轨道", EditorStyles.toolbarButton,GUILayout.Width(60)))
             {
                 ShowAddTrackMenu();
+            }
+
+            if (GUILayout.Button("数据黑板", EditorStyles.toolbarButton, GUILayout.Width(60)))
+            {
+                SkillBlackboardWindow.ShowWindow(cutscene);
             }
             
             GUILayout.EndHorizontal();

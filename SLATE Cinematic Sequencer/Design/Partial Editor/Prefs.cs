@@ -49,6 +49,7 @@ namespace Slate
             public bool rippleMode = false;
             public bool retimeMode = false;
             public bool loopRegionMode = false;
+            public int skillTickRate = 0;
         }
 
         [System.Serializable]
@@ -238,6 +239,12 @@ namespace Slate
         public static float snapInterval {
             get { return Mathf.Max(data.snapInterval, 0.001f); }
             set { if ( data.snapInterval != value ) { data.snapInterval = Mathf.Max(value, 0.001f); Save(); } }
+        }
+
+        /// <summary>技能编辑器 tick 模式（0=关, 30/60=每秒 tick 数）。持久化到 EditorPrefs。</summary>
+        public static int skillTickRate {
+            get { return data.skillTickRate; }
+            set { if ( data.skillTickRate != value ) { data.skillTickRate = value; Save(); } }
         }
 
 

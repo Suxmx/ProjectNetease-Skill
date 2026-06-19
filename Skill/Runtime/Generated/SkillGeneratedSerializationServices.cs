@@ -11,6 +11,9 @@ namespace Hoshino
         void WriteBoxed(BinaryWriter writer, uint clipId, object data);
         bool TryRead<TData>(SkillDefinition skill, SkillRuntimeNode node, out TData data) where TData : struct;
         bool IsClipKnown(uint clipId);
+        void WriteSpecialDataBoxed(BinaryWriter writer, uint specialDataId, object data);
+        bool TryReadSpecialData<TData>(SkillDefinition skill, SkillRuntimeSpecialData entry, out TData data) where TData : struct;
+        bool IsSpecialDataKnown(uint specialDataId);
     }
 
     public static partial class SkillGeneratedSerializationServices

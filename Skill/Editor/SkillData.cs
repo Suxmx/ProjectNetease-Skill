@@ -9,7 +9,7 @@ namespace Hoshino
     [Serializable]
     public class SkillFileData
     {
-        public int version = 1;
+        public int version = 2;
         public string characterReference;
         public int updateMode;
         public int wrapMode;
@@ -22,6 +22,7 @@ namespace Hoshino
         public float playTimeMin = 2f;
         public float playTimeMax = 4f;
         public List<GroupEntry> groups = new();
+        public List<SpecialDataEntry> specialDatas = new();
     }
 
     [Serializable]
@@ -61,6 +62,15 @@ namespace Hoshino
         public float blendIn;
         public float blendOut;
         public int line = 1;
+        public List<SkillCustomFieldDebugEntry> customFields = new();
+        [NonSerialized] public object customData;
+    }
+
+    /// <summary>技能级特殊数据条目（数据黑板）。镜像 ClipEntry 的 customData 机制。</summary>
+    [Serializable]
+    public class SpecialDataEntry
+    {
+        public uint dataId;
         public List<SkillCustomFieldDebugEntry> customFields = new();
         [NonSerialized] public object customData;
     }

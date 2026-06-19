@@ -77,6 +77,13 @@ namespace Slate
         public IDirector root { get; private set; }
         void IDirectable.RawUpdate(){}
 
+        /// <summary>透传 FixedTick 到所有子 track。</summary>
+        void IDirectable.FixedTick(int tick, int totalTicks)
+        {
+            for (int i = 0; i < tracks.Count; i++)
+                ((IDirectable)tracks[i]).FixedTick(tick, totalTicks);
+        }
+
         public bool isActive {
             get { return _active; }
             set

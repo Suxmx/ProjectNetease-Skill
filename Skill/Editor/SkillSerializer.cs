@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Slate;
@@ -12,7 +13,7 @@ namespace Hoshino
     public static class SkillSerializer
     {
         private const uint BinaryMagic = 0x4B534F48; // HOSK
-        private const int BinaryVersion = 1;
+        private const int BinaryVersion = 2;
 
         public static SkillFileData Export(Cutscene cutscene)
         {
@@ -81,6 +82,24 @@ namespace Hoshino
             writer.Write(cutscene.groups.Count);
             foreach (CutsceneGroup group in cutscene.groups)
                 WriteGroup(group, writer);
+
+            // --- specialDatas 段（数据黑板）---
+            List<SpecialDataEntry> specialDatas = GetSpecialDatas(cutscene);
+            writer.Write(specialDatas.Count);
+            foreach (SpecialDataEntry entry in specialDatas)
+                WriteSpecialData(entry, writer);
+        }
+
+        /// <summary>从 cutscene 的内存缓存获取 specialDatas（由 SkillEditor 维护）。</summary>
+        private static List<SpecialDataEntry> GetSpecialDatas(Cutscene cutscene)
+        {
+            return SkillBlackboardCache.Get(cutscene);
+        }
+
+        private static void WriteSpecialData(SpecialDataEntry entry, BinaryWriter writer)
+        {
+            writer.Write(entry.dataId);
+            SkillGeneratedSerializationServices.Editor.WriteSpecialData(writer, entry.dataId, entry.customData);
         }
 
         private static void WriteGroup(CutsceneGroup group, BinaryWriter writer)
@@ -188,7 +207,23 @@ namespace Hoshino
             for (int i = 0; i < groupCount; i++)
                 data.groups.Add(ReadGroup(reader));
 
+            // --- specialDatas 段（数据黑板）---
+            int specialDataCount = reader.ReadInt32();
+            for (int i = 0; i < specialDataCount; i++)
+                data.specialDatas.Add(ReadSpecialData(reader));
+
             return data;
+        }
+
+        private static SpecialDataEntry ReadSpecialData(BinaryReader reader)
+        {
+            SpecialDataEntry entry = new()
+            {
+                dataId = reader.ReadUInt32()
+            };
+            entry.customData = SkillGeneratedSerializationServices.Editor.ReadSpecialData(reader, entry.dataId);
+            SkillGeneratedSerializationServices.Editor.BuildSpecialDataDebugFields(entry.dataId, entry.customData, entry.customFields);
+            return entry;
         }
 
         private static GroupEntry ReadGroup(BinaryReader reader)
@@ -353,6 +388,9 @@ namespace Hoshino
             }
 
             cutscene.Validate();
+
+            // --- 导入 specialDatas 到 cutscene 的内存缓存 ---
+            SkillBlackboardCache.Set(cutscene, data.specialDatas ?? new());
         }
 
         private static CutsceneGroup ImportGroup(Cutscene cutscene, GroupEntry entry)

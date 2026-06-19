@@ -6,7 +6,8 @@ namespace Hoshino
     {
         Group = 0,
         Track = 1,
-        Clip = 2
+        Clip = 2,
+        SpecialData = 3
     }
 
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
@@ -35,6 +36,22 @@ namespace Hoshino
     public sealed class SkillClipTypeAttribute : Attribute
     {
         public SkillClipTypeAttribute(uint id)
+        {
+            Id = id;
+        }
+
+        public uint Id { get; }
+    }
+
+    /// <summary>
+    /// 标记一个技能特殊数据类型，供序列化代码生成器识别。
+    /// 挂在编辑态 C# class 上，字段用 <see cref="SkillCustomDataAttribute"/> 标记。
+    /// 运行时生成 <c>RuntimeXxxData</c> struct + Blob 读写。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+    public sealed class SkillSpecialDataTypeAttribute : Attribute
+    {
+        public SkillSpecialDataTypeAttribute(uint id)
         {
             Id = id;
         }

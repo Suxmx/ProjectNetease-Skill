@@ -178,6 +178,9 @@ namespace Slate
 
         void IDirectable.RawUpdate() { OnRawUpdate();}
 
+        /// <summary>固定 tick 回调，仅在编辑器 tick 模式下调度。子类 override OnFixedTick。</summary>
+        void IDirectable.FixedTick(int tick, int totalTicks) { OnFixedTick(tick, totalTicks); }
+
 
 #if UNITY_EDITOR
         void IDirectable.DrawGizmos(bool selected) {
@@ -310,6 +313,9 @@ namespace Slate
         virtual protected void OnRootUpdated(float time, float previousTime) { }
         virtual protected void OnRootDestroyed() { }
         protected virtual void OnRawUpdate() {}
+
+        /// <summary>固定 tick 回调（编辑器 tick 模式下每 tick 调用）。空默认，子类按需 override。</summary>
+        protected virtual void OnFixedTick(int tick, int totalTicks) {}
         ///----------------------------------------------------------------------------------------------
 
 

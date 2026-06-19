@@ -38,6 +38,7 @@ namespace Hoshino
             {
                 SkillSerializedTypeKind.Group => typeof(SkillGroupTypeAttribute),
                 SkillSerializedTypeKind.Track => typeof(SkillTrackTypeAttribute),
+                SkillSerializedTypeKind.SpecialData => typeof(SkillSpecialDataTypeAttribute),
                 _ => typeof(SkillClipTypeAttribute)
             };
 
@@ -56,6 +57,7 @@ namespace Hoshino
                     {
                         SkillGroupTypeAttribute group => group.Id,
                         SkillTrackTypeAttribute track => track.Id,
+                        SkillSpecialDataTypeAttribute specialData => specialData.Id,
                         SkillClipTypeAttribute clip => clip.Id,
                         _ => 0u
                     };
@@ -142,6 +144,12 @@ namespace Hoshino
                 ? clip.Type.Name.Substring(0, clip.Type.Name.Length - "Clip".Length)
                 : clip.Type.Name;
             return $"{Sanitize(name)}NodeData";
+        }
+
+        /// <summary>特殊数据源类 → 运行时 struct 名（Runtime 前缀 + 源类名）。</summary>
+        public static string GetSpecialDataName(SkillTypeInfo specialData)
+        {
+            return $"Runtime{Sanitize(specialData.Type.Name)}";
         }
 
         public static string GetTypeName(Type type)
