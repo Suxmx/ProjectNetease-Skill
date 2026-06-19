@@ -6,10 +6,9 @@ namespace Hoshino
 {
     public enum SkillNodeExecutionDomain : byte
     {
-        Predicted = 0,
-        LagCompensatedQuery = 1,
-        ServerAuthority = 2,
-        Cosmetic = 3
+        ClientPrediction = 0,
+        ClientOnly = 1,
+        ServerOnly = 2
     }
 
     [Serializable]
