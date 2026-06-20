@@ -72,6 +72,8 @@ namespace Hoshino
         {
             if (actor == null)
                 return;
+            if (cutscene.currentTime < startTime || cutscene.currentTime > endTime)
+                return;
 
             int startTick = SkillTickUtility.SecondsToTicks(startTime, 60);
             int elapsedTick = tick - startTick;

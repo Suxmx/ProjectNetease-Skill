@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Drawing;
+using Unity.Collections;
 using UnityEngine;
 
 namespace Hoshino
@@ -220,7 +221,7 @@ namespace Hoshino
         {
             Vector3 pos = smoothTransform.position + Vector3.up * HealthLabelYOffset;
             Color color = Color.Lerp(Color.red, Color.green, max > 0 ? Mathf.Clamp01((float)current / max) : 0f);
-            Draw.Label2D(pos, $"{current}/{max}", LabelSize, LabelAlignment.Center, color);
+            Draw.ingame.Label2D(pos, $"{current}/{max}", LabelSize, LabelAlignment.Center, color);
         }
 
         /// <summary>绘制角色头顶技能 CD 进度数字。</summary>
@@ -230,7 +231,7 @@ namespace Hoshino
         public static void CooldownBar(Transform smoothTransform, int currentTick, int totalTicks)
         {
             Vector3 pos = smoothTransform.position + Vector3.up * CooldownLabelYOffset;
-            Draw.Label2D(pos, $"{currentTick}/{totalTicks}", LabelSize, LabelAlignment.Center, Color.cyan);
+            Draw.ingame.Label2D(pos, $"{currentTick}/{totalTicks}", LabelSize, LabelAlignment.Center, Color.cyan);
         }
 
         #endregion
