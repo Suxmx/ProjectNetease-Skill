@@ -201,39 +201,5 @@ namespace Hoshino
         }
 
         #endregion
-
-        #region 血条 / CD 条
-
-        /// <summary>血条在角色头顶的偏移。</summary>
-        private const float HealthLabelYOffset = 2.2f;
-
-        /// <summary>CD 条在血条下方的偏移。</summary>
-        private const float CooldownLabelYOffset = 1.9f;
-
-        /// <summary>文字大小（像素）。</summary>
-        private const float LabelSize = 14f;
-
-        /// <summary>绘制角色头顶血量数字。</summary>
-        /// <param name="smoothTransform">平滑后的 transform（TickSmoother 图形对象）。</param>
-        /// <param name="current">当前血量。</param>
-        /// <param name="max">最大血量。</param>
-        public static void HealthBar(Transform smoothTransform, int current, int max)
-        {
-            Vector3 pos = smoothTransform.position + Vector3.up * HealthLabelYOffset;
-            Color color = Color.Lerp(Color.red, Color.green, max > 0 ? Mathf.Clamp01((float)current / max) : 0f);
-            Draw.ingame.Label2D(pos, $"{current}/{max}", LabelSize, LabelAlignment.Center, color);
-        }
-
-        /// <summary>绘制角色头顶技能 CD 进度数字。</summary>
-        /// <param name="smoothTransform">平滑后的 transform。</param>
-        /// <param name="currentTick">当前已过 tick。</param>
-        /// <param name="totalTicks">技能总 tick。</param>
-        public static void CooldownBar(Transform smoothTransform, int currentTick, int totalTicks)
-        {
-            Vector3 pos = smoothTransform.position + Vector3.up * CooldownLabelYOffset;
-            Draw.ingame.Label2D(pos, $"{currentTick}/{totalTicks}", LabelSize, LabelAlignment.Center, Color.cyan);
-        }
-
-        #endregion
     }
 }

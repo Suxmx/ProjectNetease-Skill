@@ -5,17 +5,20 @@ using UnityEngine;
 namespace Hoshino
 {
     /// <summary>
-    /// 移动位移 Clip（ClientPrediction 域）。
-    /// 编辑器预览：在 active 区间内按 DisplacementPerSecond × 已过时间实际移动 Actor，
-    /// 退出/回放时恢复原位。
+    /// 移动速度 Clip（ClientPrediction 域，id=1002）。
+    /// 按 Velocity（每秒速度）施加预测速度到 Motor，由 PredictionRigidbody.Simulate 连续推进物理，
+    /// 相比瞬移式位移更符合物理、reconcile 更干净，突进结束速度归零即硬停。
+    /// 编辑器预览：在 active 区间内按 Velocity × 已过时间实际移动 Actor，退出/回放时恢复原位。
     /// </summary>
     [SkillClipType(1002u)]
     [Attachable(typeof(SkillActionTrack))]
-    public sealed class MoveDisplacementClip : ActionClip
+    public sealed class SetVelocityClip : ActionClip
     {
         [SerializeField, HideInInspector] private float _length = 0.2f;
         [SkillCustomData, LabelText("Space")] public SkillSpace Space = SkillSpace.AimDirection;
-        [SkillCustomData, LabelText("Displacement Per Second")] public Vector3 DisplacementPerSecond;
+        [SkillCustomData, LabelText("Velocity")] public Vector3 Velocity;
+        /// <summary>速度系数曲线（时间归一化 0-1，值 0-1）。null/空按 1 处理（恒速）。结束段衰减可消除 TickSmoother 追位拖拽。</summary>
+        [SkillCustomData, LabelText("Velocity Curve")] public AnimationCurve VelocityCurve = AnimationCurve.Linear(0f, 1f, 1f, 1f);
 
         public override float length
         {
@@ -32,7 +35,7 @@ namespace Hoshino
         protected override void OnEnter()
         {
             CacheInitialPosition();
-            ApplyDisplacement(cutscene.currentTime);
+            ApplyOffset(cutscene.currentTime);
         }
 
         protected override void OnReverse()
@@ -47,7 +50,7 @@ namespace Hoshino
 
         protected override void OnUpdate(float time, float previousTime)
         {
-            ApplyDisplacement(time);
+            ApplyOffset(time);
         }
 
         protected override void OnRawUpdate()
@@ -65,7 +68,7 @@ namespace Hoshino
             if (!_hasInitialPosition)
                 CacheInitialPosition();
 
-            ApplyDisplacement(cutscene.currentTime);
+            ApplyOffset(cutscene.currentTime);
         }
 
         protected override void OnFixedTick(int tick, int totalTicks)
@@ -84,8 +87,8 @@ namespace Hoshino
                 CacheInitialPosition();
 
             float elapsedSeconds = SkillTickUtility.TicksToSeconds(elapsedTick, 60);
-            Vector3 displacement = ResolveDisplacement(elapsedSeconds);
-            actor.transform.position = _initialPosition + displacement;
+            Vector3 offset = ResolveOffset(elapsedSeconds);
+            actor.transform.position = _initialPosition + offset;
         }
 
         /// <summary>缓存 Actor 当前位置作为初始位置。</summary>
@@ -105,25 +108,34 @@ namespace Hoshino
             _hasInitialPosition = false;
         }
 
-        /// <summary>按当前时间应用位移到 Actor。</summary>
-        private void ApplyDisplacement(float currentTime)
+        /// <summary>按当前时间应用位移到 Actor（预览：Velocity × elapsed）。</summary>
+        private void ApplyOffset(float currentTime)
         {
             if (actor == null || !_hasInitialPosition)
                 return;
 
             float elapsed = Mathf.Max(0f, currentTime - startTime);
-            Vector3 displacement = ResolveDisplacement(elapsed);
-            actor.transform.position = _initialPosition + displacement;
+            Vector3 offset = ResolveOffset(elapsed);
+            actor.transform.position = _initialPosition + offset;
         }
 
-        /// <summary>根据 Space 将 DisplacementPerSecond × elapsed 转换为世界位移。</summary>
-        private Vector3 ResolveDisplacement(float elapsedSeconds)
+        /// <summary>根据 Space 将 Velocity × elapsedSeconds 转换为世界位移，并乘以曲线系数。</summary>
+        private Vector3 ResolveOffset(float elapsedSeconds)
         {
             Transform actorTransform = actor != null ? actor.transform : null;
             if (actorTransform == null)
-                return DisplacementPerSecond * elapsedSeconds;
+                return Velocity * EvaluateCurve(elapsedSeconds) * elapsedSeconds;
 
-            return SkillPreviewUtility.ResolveVector(Space, DisplacementPerSecond, actorTransform, actorTransform.forward) * elapsedSeconds;
+            return SkillPreviewUtility.ResolveVector(Space, Velocity, actorTransform, actorTransform.forward) * EvaluateCurve(elapsedSeconds) * elapsedSeconds;
+        }
+
+        /// <summary>求曲线系数：按归一化时间 t∈[0,1] 求值，null/空曲线返回 1（恒速兼容）。</summary>
+        private float EvaluateCurve(float elapsedSeconds)
+        {
+            if (VelocityCurve == null || VelocityCurve.length == 0)
+                return 1f;
+            float t = length > 0f ? Mathf.Clamp01(elapsedSeconds / length) : 1f;
+            return VelocityCurve.Evaluate(t);
         }
     }
 }

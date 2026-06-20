@@ -127,7 +127,8 @@ namespace Hoshino
                 type == typeof(Vector4) ||
                 type == typeof(Quaternion) ||
                 type == typeof(Color) ||
-                type == typeof(LayerMask);
+                type == typeof(LayerMask) ||
+                type == typeof(AnimationCurve);
 
             if (!supported)
                 throw new NotSupportedException($"Unsupported [SkillCustomData] field type {field.DeclaringType.FullName}.{field.Name}: {field.FieldType.FullName}.");
@@ -173,6 +174,7 @@ namespace Hoshino
             if (type == typeof(Quaternion)) return "Quaternion";
             if (type == typeof(Color)) return "Color";
             if (type == typeof(LayerMask)) return "LayerMask";
+            if (type == typeof(AnimationCurve)) return "AnimationCurve";
             if (type.IsArray) return $"{GetTypeName(type.GetElementType())}[]";
             return type.Namespace == "Hoshino" ? type.Name : $"global::{type.FullName.Replace("+", ".")}";
         }
@@ -205,6 +207,7 @@ namespace Hoshino
             if (type == typeof(Quaternion)) return $"ReadQuaternion({reader})";
             if (type == typeof(Color)) return $"ReadColor({reader})";
             if (type == typeof(LayerMask)) return $"{reader}.ReadInt32()";
+            if (type == typeof(AnimationCurve)) return $"ReadCurve({reader})";
             throw new NotSupportedException($"Unsupported generated read type {type.FullName}.");
         }
 
@@ -223,6 +226,7 @@ namespace Hoshino
             if (type == typeof(Quaternion)) return $"WriteQuaternion({writer}, {value});";
             if (type == typeof(Color)) return $"WriteColor({writer}, {value});";
             if (type == typeof(LayerMask)) return $"{writer}.Write({value}.value);";
+            if (type == typeof(AnimationCurve)) return $"WriteCurve({writer}, {value});";
             if (type == typeof(string)) return $"{writer}.Write({value} ?? string.Empty);";
             return $"{writer}.Write({value});";
         }
@@ -324,6 +328,18 @@ namespace Hoshino
             sb.AppendLine($"{indent}private static Quaternion ReadQuaternion(BinaryReader reader) {{ return new Quaternion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()); }}");
             sb.AppendLine($"{indent}private static void WriteColor(BinaryWriter writer, Color value) {{ writer.Write(value.r); writer.Write(value.g); writer.Write(value.b); writer.Write(value.a); }}");
             sb.AppendLine($"{indent}private static Color ReadColor(BinaryReader reader) {{ return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()); }}");
+            sb.AppendLine($"{indent}private static void WriteCurve(BinaryWriter writer, AnimationCurve curve) {{");
+            sb.AppendLine($"{indent}    Keyframe[] keys = curve != null ? curve.keys : System.Array.Empty<Keyframe>();");
+            sb.AppendLine($"{indent}    writer.Write(keys.Length);");
+            sb.AppendLine($"{indent}    for (int i = 0; i < keys.Length; i++) {{ writer.Write(keys[i].time); writer.Write(keys[i].value); writer.Write(keys[i].inTangent); writer.Write(keys[i].outTangent); }}");
+            sb.AppendLine($"{indent}}}");
+            sb.AppendLine($"{indent}private static AnimationCurve ReadCurve(BinaryReader reader) {{");
+            sb.AppendLine($"{indent}    int count = reader.ReadInt32();");
+            sb.AppendLine($"{indent}    if (count <= 0) return new AnimationCurve();");
+            sb.AppendLine($"{indent}    Keyframe[] keys = new Keyframe[count];");
+            sb.AppendLine($"{indent}    for (int i = 0; i < count; i++) {{ keys[i] = new Keyframe(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()); }}");
+            sb.AppendLine($"{indent}    return new AnimationCurve(keys);");
+            sb.AppendLine($"{indent}}}");
         }
     }
 }
