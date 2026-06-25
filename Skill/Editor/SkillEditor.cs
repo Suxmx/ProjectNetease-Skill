@@ -328,7 +328,7 @@ namespace Hoshino
         ///----------------------------------------------------------------------------------------------
 
         ///<summary>Opens the editor :)</summary>
-        [MenuItem("Window/Hoshino/Skill Editor", false, 100)]
+        [MenuItem("Skill/技能编辑器", false, 100)]
         public static void ShowWindow() { ShowWindow(null); }
         public static void ShowWindow(Cutscene newCutscene) {
             var window = EditorWindow.GetWindow(typeof(SkillEditor)) as SkillEditor;

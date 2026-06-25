@@ -15,7 +15,7 @@ namespace Hoshino
         private const string OutputExtension = ".bytes";
         private const string DebugJsonSuffix = ".compiled.json";
         private const string WriteDebugJsonPrefsKey = "Hoshino.Skill.WriteCompiledDebugJson";
-        private const string WriteDebugJsonMenuPath = "Tools/Hoshino/Skill/Write Compiled Debug Json";
+        private const string WriteDebugJsonMenuPath = "Skill/调试/写入编译调试 JSON";
 
         public static bool WriteCompiledDebugJson
         {
@@ -23,7 +23,7 @@ namespace Hoshino
             set => EditorPrefs.SetBool(WriteDebugJsonPrefsKey, value);
         }
 
-        [MenuItem("Tools/Hoshino/Compile All Skill Definitions")]
+        [MenuItem("Skill/编译所有技能定义")]
         public static void CompileAll()
         {
             EnsureOutputFolder();

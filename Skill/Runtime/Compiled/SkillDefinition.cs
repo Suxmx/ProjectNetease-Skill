@@ -4,13 +4,6 @@ using UnityEngine;
 
 namespace Hoshino
 {
-    public enum SkillNodeExecutionDomain : byte
-    {
-        ClientPrediction = 0,
-        ClientOnly = 1,
-        ServerOnly = 2
-    }
-
     [Serializable]
     public struct SkillRuntimeNode
     {
@@ -66,6 +59,13 @@ namespace Hoshino
         public byte[] NodeDataBlob => _nodeDataBlob ?? Array.Empty<byte>();
         public SkillRuntimeSpecialData[] SpecialDatas => _specialDatas;
         public byte[] SpecialDataBlob => _specialDataBlob ?? Array.Empty<byte>();
+
+        /// <summary>
+        /// 预加载的节点数据容器（由生成的 <c>SkillGeneratedPreloadedData</c> 填充）。
+        /// <see cref="FromBytes"/> 末尾自动调用 <see cref="SkillGeneratedSerializationServices.Runtime.Preload"/> 填充，
+        /// 运行时 Executor 根基类通过 <c>is ISkillPreloadedNodeData&lt;TData&gt;</c> 强类型取值，热路径零反序列化、零装箱。
+        /// </summary>
+        public object PreloadedNodeData { get; set; }
 
         public void Initialize(int skillId, string skillKey, int version, int sourceTickRate, int lengthTicks, SkillRuntimeNode[] nodes, byte[] nodeDataBlob, SkillRuntimeSpecialData[] specialDatas, byte[] specialDataBlob)
         {
@@ -205,6 +205,9 @@ namespace Hoshino
 
             definition._specialDataBlob = reader.ReadBytes(sdBlobLength);
             definition._specialDataCache = null;
+
+            // --- 预加载所有节点数据到强类型容器，运行时热路径零反序列化 ---
+            SkillGeneratedSerializationServices.Runtime.Preload(definition);
             return definition;
         }
 

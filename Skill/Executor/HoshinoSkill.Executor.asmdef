@@ -1,0 +1,16 @@
+{
+    "name": "HoshinoSkill.Executor",
+    "rootNamespace": "Hoshino.Skill.Executor",
+    "references": [
+        "GUID:f02fb1a591934a5a8fb5763fdb407101"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

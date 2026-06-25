@@ -39,7 +39,7 @@ namespace Hoshino
             {
                 _editor ??= FindImplementation<ISkillGeneratedEditorSerialization>(
                     "editor skill generated serialization",
-                    "Tools/Hoshino/Generate Skill Serialization Code");
+                    "Skill/生成序列化代码");
                 return _editor;
             }
         }

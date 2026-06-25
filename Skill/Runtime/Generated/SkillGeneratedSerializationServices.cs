@@ -14,6 +14,13 @@ namespace Hoshino
         void WriteSpecialDataBoxed(BinaryWriter writer, uint specialDataId, object data);
         bool TryReadSpecialData<TData>(SkillDefinition skill, SkillRuntimeSpecialData entry, out TData data) where TData : struct;
         bool IsSpecialDataKnown(uint specialDataId);
+
+        /// <summary>
+        /// 预加载 <paramref name="skill"/> 所有节点的自定义数据到强类型容器，
+        /// 赋值给 <see cref="SkillDefinition.PreloadedNodeData"/>。
+        /// 由 <see cref="SkillDefinition.FromBytes"/> 末尾调用一次，运行时 Executor 热路径直接读容器，无反序列化。
+        /// </summary>
+        void Preload(SkillDefinition skill);
     }
 
     public static partial class SkillGeneratedSerializationServices
@@ -26,7 +33,7 @@ namespace Hoshino
             {
                 _runtime ??= FindImplementation<ISkillGeneratedRuntimeSerialization>(
                     "runtime skill generated serialization",
-                    "Tools/Hoshino/Generate Skill Serialization Code");
+                    "Skill/生成序列化代码");
                 return _runtime;
             }
         }
