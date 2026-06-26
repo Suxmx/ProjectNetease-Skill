@@ -1,0 +1,4 @@
+interface:
+  display_name: "MemoFramework Skill"
+  short_description: "Work with Hoshino skill timeline runtime."
+  default_prompt: "Use $memo-framework-skill to add or debug Hoshino skill timeline nodes."
