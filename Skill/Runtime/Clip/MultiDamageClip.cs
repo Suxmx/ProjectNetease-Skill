@@ -1,12 +1,13 @@
 using Sirenix.OdinInspector;
 using Slate;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Hoshino
 {
     /// <summary>
     /// 多次伤害判定 Clip。有长度，按 HitIntervalTicks 间隔执行多次伤害判定。
-    /// 编辑器预览：仅在判定 tick 附近（±2 tick 容差）通过 OnRawUpdate 持续绘制判定范围，
+    /// 编辑器预览：仅在判定 tick 附近（±1 tick 容差）通过 OnRawUpdate 持续绘制判定范围，
     /// 非判定帧不绘制。Odin 显示总判定次数、预计 DPS、当前 tick。
     /// </summary>
     [SkillClipType(1008u)]
@@ -26,6 +27,9 @@ namespace Hoshino
         [SkillCustomData, LabelText("Damage Group")] public byte DamageGroupId = 0;
         [SkillCustomData, LabelText("Hit Interval (ticks)")] public byte HitIntervalTicks = 10;
 
+        /// <summary>OnRawUpdate 中判定 tick 的可见容差（±tick），让每次判定闪烁 3 帧。</summary>
+        private const int HitVisibleTolerance = 1;
+
         public override float length
         {
             get { return _length; }
@@ -34,15 +38,15 @@ namespace Hoshino
 
         public override bool isValid => true;
 
-        /// <summary>总判定次数（含起始时刻）。</summary>
+        /// <summary>总判定次数（含起始时刻）。与 <see cref="EnumerateHitTicks"/> 共享同一逻辑。</summary>
         public int HitCount
         {
             get
             {
-                int lengthTicks = SkillTickUtility.SecondsToTicks(length, 60);
-                if (HitIntervalTicks <= 0)
-                    return 1;
-                return lengthTicks / HitIntervalTicks + 1;
+                int count = 0;
+                foreach (int _ in EnumerateHitTicks())
+                    count++;
+                return count;
             }
         }
 
@@ -55,6 +59,29 @@ namespace Hoshino
                     return 0f;
                 return Damage * HitCount / length;
             }
+        }
+
+        /// <summary>
+        /// 枚举所有判定 tick 位置（相对于 clip 起始的 tick 偏移）。
+        /// HitCount、OnClipGUI 红线、IsHitTick 三处共用此方法，保证判定次数完全一致。
+        /// </summary>
+        private IEnumerable<int> EnumerateHitTicks()
+        {
+            int lengthTicks = SkillTickUtility.SecondsToTicks(length, 60);
+            if (lengthTicks <= 0)
+            {
+                yield return 0;
+                yield break;
+            }
+
+            if (HitIntervalTicks <= 0)
+            {
+                yield return 0;
+                yield break;
+            }
+
+            for (int t = 0; t <= lengthTicks; t += HitIntervalTicks)
+                yield return t;
         }
 
         /// <summary>OnRawUpdate：仅在判定 tick 附近（±容差）绘制判定范围。</summary>
@@ -70,20 +97,15 @@ namespace Hoshino
             DrawDamagePreview();
         }
 
-        /// <summary>判断当前 tick 是否在任一判定 tick 的可见范围内。
-        /// 可见范围 = interval 的一半，确保在下一个判定帧之前消失。</summary>
+        /// <summary>判断当前 tick 是否在任一判定 tick 的可见容差内。</summary>
         private bool IsHitTick(int elapsedTick)
         {
             if (elapsedTick < 0)
                 return false;
 
-            if (HitIntervalTicks <= 0)
-                return elapsedTick == 0;
-
-            int halfInterval = Mathf.Max(1, HitIntervalTicks / 2);
-            for (int t = 0; t <= SkillTickUtility.SecondsToTicks(length, 60); t += HitIntervalTicks)
+            foreach (int t in EnumerateHitTicks())
             {
-                if (Mathf.Abs(elapsedTick - t) < halfInterval)
+                if (Mathf.Abs(elapsedTick - t) <= HitVisibleTolerance)
                     return true;
             }
             return false;
@@ -109,28 +131,26 @@ namespace Hoshino
         {
             int lengthTicks = SkillTickUtility.SecondsToTicks(length, 60);
             if (lengthTicks <= 0)
-                return;
-
-            if (HitIntervalTicks <= 0)
             {
                 DrawTickLine(rect, 0f);
+                return;
             }
-            else
+
+            foreach (int t in EnumerateHitTicks())
             {
-                for (int t = 0; t <= lengthTicks; t += HitIntervalTicks)
-                {
-                    float normalizedX = (float)t / lengthTicks;
-                    DrawTickLine(rect, normalizedX);
-                }
+                float normalizedX = (float)t / lengthTicks;
+                DrawTickLine(rect, normalizedX);
             }
         }
 
         private void DrawTickLine(Rect rect, float normalizedX)
         {
-            float x = normalizedX * rect.width;
+            const float lineWidth = 1.5f;
+            // --- clamp x 到 rect 内，避免结束 tick 的红线越界被 GUI.Window 裁剪不可见 ---
+            float x = Mathf.Clamp(normalizedX * rect.width, 0f, rect.width - lineWidth);
             Color prev = GUI.color;
             GUI.color = new Color(1f, 0.3f, 0.3f, 0.8f);
-            GUI.DrawTexture(new Rect(x, 0, 1.5f, rect.height), Slate.Styles.whiteTexture);
+            GUI.DrawTexture(new Rect(x, 0, lineWidth, rect.height), Slate.Styles.whiteTexture);
             GUI.color = prev;
         }
 

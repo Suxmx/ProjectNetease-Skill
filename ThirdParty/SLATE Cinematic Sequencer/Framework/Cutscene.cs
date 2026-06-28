@@ -323,7 +323,9 @@ namespace Slate
         protected void EditorUpdate()
         {
             if (Application.isPlaying) return;
+#if UNITY_EDITOR
             UnityEditor.SceneView.RepaintAll();
+#endif
             if (directables == null)
             {
                 return;

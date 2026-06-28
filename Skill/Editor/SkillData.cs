@@ -10,6 +10,7 @@ namespace Hoshino
     public class SkillFileData
     {
         public int version = 2;
+        /// <summary>技能级 Actor 绑定：预制体/FBX 的 AssetDatabase 路径。预览时加载并赋给所有 ActorGroup。</summary>
         public string characterReference;
         public int updateMode;
         public int wrapMode;

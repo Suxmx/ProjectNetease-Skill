@@ -5,6 +5,9 @@ using UnityEngine;
 using System.Linq;
 using System.Collections.Generic;
 using Slate;
+using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
+using Unity.Profiling;
 
 namespace Hoshino
 {
@@ -36,6 +39,26 @@ namespace Hoshino
 
         static bool isReloading;
 
+        // --- OnGUI 各阶段 Profiler 标记，用于定位耗时热点 ---
+        private static readonly ProfilerMarker s_OnGUIMarker = new("SkillEditor.OnGUI");
+        private static readonly ProfilerMarker s_ShowWelcomeMarker = new("SkillEditor.ShowWelcome");
+        private static readonly ProfilerMarker s_KeyboardShortcutsMarker = new("SkillEditor.DoKeyboardShortcuts");
+        private static readonly ProfilerMarker s_PlaybackControlsMarker = new("SkillEditor.ShowPlaybackControls");
+        private static readonly ProfilerMarker s_TimeInfoMarker = new("SkillEditor.ShowTimeInfo");
+        private static readonly ProfilerMarker s_ToolbarMarker = new("SkillEditor.ShowToolbar");
+        private static readonly ProfilerMarker s_ScrubControlsMarker = new("SkillEditor.DoScrubControls");
+        private static readonly ProfilerMarker s_ZoomAndPanMarker = new("SkillEditor.DoZoomAndPan");
+        private static readonly ProfilerMarker s_ClipsReorderMarker = new("SkillEditor.ClipsOrderBy");
+        private static readonly ProfilerMarker s_UndoRecordMarker = new("SkillEditor.UndoRecord");
+        private static readonly ProfilerMarker s_GroupsTracksListMarker = new("SkillEditor.ShowGroupsAndTracksList");
+        private static readonly ProfilerMarker s_TimeLinesMarker = new("SkillEditor.ShowTimeLines");
+        private static readonly ProfilerMarker s_MinMaxSliderMarker = new("SkillEditor.DrawMinMaxSlider");
+        private static readonly ProfilerMarker s_GuidesMarker = new("SkillEditor.DrawGuides");
+        private static readonly ProfilerMarker s_AcceptDropsMarker = new("SkillEditor.AcceptDrops");
+        private static readonly ProfilerMarker s_SetDirtyMarker = new("SkillEditor.SetDirty");
+        private static readonly ProfilerMarker s_GuideLineMarker = new("SkillEditor.DrawGuideLine");
+        private static readonly ProfilerMarker s_RedGuideLineBtnMarker = new("SkillEditor.DrawRedGuideLineBtn");
+
         static SkillEditor()
         {
             UnityEditor.AssemblyReloadEvents.beforeAssemblyReload += () => isReloading = true;
@@ -43,6 +66,9 @@ namespace Hoshino
 
         private Cutscene _cutscene;
         private int _cutsceneID;
+
+        // --- 预览场景状态：标记当前是否处于预览场景（退出技能文件时不再切回，保持预览场景）---
+        [System.NonSerialized] private bool _isInPreviewScene;
 
         //Layout variables
         private static float LEFT_MARGIN { //caps for consistency. margin on the left side. The width of the group/tracks list.
@@ -332,10 +358,6 @@ namespace Hoshino
         public static void ShowWindow() { ShowWindow(null); }
         public static void ShowWindow(Cutscene newCutscene) {
             var window = EditorWindow.GetWindow(typeof(SkillEditor)) as SkillEditor;
-            if (newCutscene != null)
-            {
-                window.EnsureDefaultActors(newCutscene);
-            }
             window.InitializeAll(newCutscene);
             window.Show();
         }
@@ -383,6 +405,134 @@ namespace Hoshino
             return go;
         }
 
+        /// <summary>
+        /// 按 <see cref="SkillActorBindingCache"/> 中记录的绑定路径加载预制体/FBX 并实例化为预览 Actor，
+        /// 挂到 cutscene 根物体下，置于场景正中心，赋给所有 ActorGroup。
+        /// 缺少 Animator/Animation 组件时自动补加 Animator（供 AnimationClip.SampleAnimation 使用）。
+        /// 无绑定或加载失败时回退到 <see cref="EnsureDefaultActors"/> 的白色胶囊体。
+        /// </summary>
+        private void EnsurePreviewActor(Cutscene cutscene)
+        {
+            if (cutscene == null)
+                return;
+
+            string path = SkillActorBindingCache.Get(cutscene);
+
+            // --- 销毁之前可能存在的预览 Actor（避免重复，并让 EnsureDefaultActors 能为空组创建胶囊体）---
+            DestroyExistingPreviewActors(cutscene);
+            foreach (var g in cutscene.groups.OfType<ActorGroup>())
+                g.actor = null;
+
+            if (string.IsNullOrEmpty(path))
+            {
+                EnsureDefaultActors(cutscene);
+                return;
+            }
+
+            GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (asset == null)
+            {
+                Debug.LogWarning($"[SkillEditor] Actor 绑定资源加载失败，回退到默认胶囊体: {path}");
+                EnsureDefaultActors(cutscene);
+                return;
+            }
+
+            // --- 实例化：prefab 用 InstantiatePrefab 保持连接，FBX/其他用 Instantiate ---
+            GameObject actor;
+            if (PrefabUtility.IsPartOfPrefabAsset(asset))
+                actor = (GameObject)PrefabUtility.InstantiatePrefab(asset, cutscene.transform);
+            else
+                actor = Object.Instantiate(asset, cutscene.transform);
+
+            actor.name = asset.name + "_Preview";
+            actor.transform.localPosition = Vector3.zero;
+            actor.transform.localRotation = Quaternion.identity;
+
+            EnsureAnimatorComponent(actor);
+
+            // --- 技能级单 Actor：替换所有 ActorGroup 的 actor ---
+            foreach (var g in cutscene.groups.OfType<ActorGroup>())
+                g.actor = actor;
+        }
+
+        /// <summary>销毁 cutscene 下所有预览 Actor 子物体，跳过 Slate 的 __GroupsRoot__（groups/tracks/clips 挂在其下）。</summary>
+        private static void DestroyExistingPreviewActors(Cutscene cutscene)
+        {
+            var children = new List<Transform>();
+            for (int i = 0; i < cutscene.transform.childCount; i++)
+            {
+                Transform child = cutscene.transform.GetChild(i);
+                // --- 跳过 Slate 的 groups 根节点（含所有 group/track/clip）和任何带 CutsceneGroup 的物体 ---
+                if (child.name == "__GroupsRoot__")
+                    continue;
+                if (child.GetComponent<Slate.CutsceneGroup>() != null)
+                    continue;
+                children.Add(child);
+            }
+            foreach (var child in children)
+                DestroyImmediate(child.gameObject);
+        }
+
+        /// <summary>
+        /// 确保 actor 上有 Animator 或 Animation 组件（AnimationClip.SampleAnimation 需要）。
+        /// 两者都无时添加 Animator。
+        /// </summary>
+        private static void EnsureAnimatorComponent(GameObject actor)
+        {
+            if (actor.GetComponent<Animator>() != null)
+                return;
+            if (actor.GetComponent<Animation>() != null)
+                return;
+            actor.AddComponent<Animator>();
+        }
+
+        /// <summary>
+        /// 编译重载后 <see cref="SkillActorBindingCache"/> 的静态字典会随程序集重置丢失。
+        /// 若 cutscene 已绑定文件路径但缓存为空，从磁盘重新读取 characterReference 写回缓存。
+        /// </summary>
+        private static void RestoreCachesFromFileIfNeeded(Cutscene cutscene)
+        {
+            if (cutscene == null)
+                return;
+            if (!string.IsNullOrEmpty(SkillActorBindingCache.Get(cutscene)))
+                return;
+            string path = cutscene.skillFilePath;
+            if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+                return;
+            SkillFileData data = SkillSerializer.ReadFileData(path);
+            if (data != null)
+                SkillActorBindingCache.Set(cutscene, data.characterReference ?? string.Empty);
+        }
+
+        /// <summary>
+        /// 弹窗提示用户是否切换到技能预览场景。同意则打开预览场景。
+        /// 已在预览场景中则跳过提示。在 ShowWelcome 打开新文件前调用。
+        /// 退出技能文件时不再切回原场景，保持预览场景以便连续编辑多个技能。
+        /// </summary>
+        private void TryEnterPreviewScene()
+        {
+            if (SkillPreviewScene.IsActive())
+            {
+                _isInPreviewScene = true;
+                return;
+            }
+
+            bool ok = EditorUtility.DisplayDialog(
+                "预览场景",
+                "是否切换到技能预览场景？\n（预览场景含基础平台，Actor 置于正中心用于预览）",
+                "切换", "留在当前场景");
+
+            if (!ok)
+            {
+                _isInPreviewScene = false;
+                return;
+            }
+
+            SkillPreviewScene.CreateIfMissing();
+            SkillPreviewScene.Open();
+            _isInPreviewScene = true;
+        }
+
         //...
         void OnEnable() {
             Styles.Load();
@@ -412,6 +562,10 @@ namespace Hoshino
 
             current = this;
             InitializeAll();
+
+            // --- 编译重载后恢复预览场景状态：若当前已在预览场景，标记为预览模式 ---
+            if (cutscene != null && SkillPreviewScene.IsActive())
+                _isInPreviewScene = true;
         }
 
         //...
@@ -438,6 +592,7 @@ namespace Hoshino
                 if (choice == 0) SaveToFile();
             }
 
+            // --- 关闭窗口时保持预览场景，不切回原场景，便于重开窗口继续编辑 ---
             isReloading = false;
             current = null;
         }
@@ -470,14 +625,18 @@ namespace Hoshino
                 if ( !Application.isPlaying ) {
                     Stop(true);
                 }
-                // --- 清理旧 cutscene 的数据黑板缓存 ---
+                // --- 清理旧 cutscene 的数据黑板与 Actor 绑定缓存 ---
                 SkillBlackboardCache.Clear(cutscene);
+                SkillActorBindingCache.Clear(cutscene);
             }
 
             //set the new
             if ( newCutscene != null ) {
                 cutscene = newCutscene;
-                EnsureDefaultActors(cutscene);
+                // --- 编译重载后静态缓存（SkillActorBindingCache/SkillBlackboardCache）会随程序集重置丢失，
+                //     若 cutscene 已有文件路径但缓存为空，从磁盘重新恢复 ---
+                RestoreCachesFromFileIfNeeded(cutscene);
+                EnsurePreviewActor(cutscene);
                 CutsceneUtility.selectedObject = null;
                 multiSelection = null;
                 InitClipWrappers();
@@ -830,7 +989,7 @@ namespace Hoshino
 
         //...
         void OnGUI() {
-
+            using (s_OnGUIMarker.Auto()) {
             GUI.skin.label.richText = true;
             GUI.skin.label.alignment = TextAnchor.UpperLeft;
             EditorStyles.label.richText = true;
@@ -841,7 +1000,8 @@ namespace Hoshino
             current = this;
 
             if ( cutscene == null || isAboutButtonPressed ) {
-                ShowWelcome();
+                using (s_ShowWelcomeMarker.Auto())
+                    ShowWelcome();
                 return;
             }
 
@@ -880,16 +1040,20 @@ namespace Hoshino
             var doRecordUndo = e.rawType == EventType.MouseDown && ( e.button == 0 || e.button == 1 );
             doRecordUndo |= e.type == EventType.DragPerform;
             if ( doRecordUndo ) {
-                Undo.RegisterFullObjectHierarchyUndo(cutscene.groupsRoot.gameObject, "Cutscene Change");
-                Undo.RecordObject(cutscene, "Cutscene Change");
+                using (s_UndoRecordMarker.Auto()) {
+                    Undo.RegisterFullObjectHierarchyUndo(cutscene.groupsRoot.gameObject, "Cutscene Change");
+                    Undo.RecordObject(cutscene, "Cutscene Change");
+                }
                 willDirty = true;
             }
 
             //reorder clips lists for better UI. This is strictly a UI thing.
             if ( interactingClip == null && e.type == EventType.Layout ) {
-                foreach ( var group in cutscene.groups ) {
-                    foreach ( var track in group.tracks ) {
-                        track.clips = track.clips.OrderBy(a => a.startTime).ToList();
+                using (s_ClipsReorderMarker.Auto()) {
+                    foreach ( var group in cutscene.groups ) {
+                        foreach ( var track in group.tracks ) {
+                            track.clips = track.clips.OrderBy(a => a.startTime).ToList();
+                        }
                     }
                 }
             }
@@ -901,13 +1065,19 @@ namespace Hoshino
             centerRect = new Rect(LEFT_MARGIN, TOP_MARGIN + TOOLBAR_HEIGHT, screenWidth - LEFT_MARGIN - RIGHT_MARGIN, screenHeight - TOOLBAR_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN+ scrollPos.y);
             guideSlideRect = new Rect(LEFT_MARGIN, screenHeight - BOTTOM_MARGIN, screenWidth - LEFT_MARGIN - RIGHT_MARGIN, BOTTOM_MARGIN);
             //...
-            DoKeyboardShortcuts();
-            ShowPlaybackControls(topLeftRect);
-            ShowTimeInfo(topMiddleRect);
-            ShowToolbar();
+            using (s_KeyboardShortcutsMarker.Auto())
+                DoKeyboardShortcuts();
+            using (s_PlaybackControlsMarker.Auto())
+                ShowPlaybackControls(topLeftRect);
+            using (s_TimeInfoMarker.Auto())
+                ShowTimeInfo(topMiddleRect);
+            using (s_ToolbarMarker.Auto())
+                ShowToolbar();
             if (cutscene == null) return;
-            DoScrubControls();
-            DoZoomAndPan();
+            using (s_ScrubControlsMarker.Auto())
+                DoScrubControls();
+            using (s_ZoomAndPanMarker.Auto())
+                DoZoomAndPan();
             
             //Dirty and Resample flags?
             if ( e.rawType == EventType.MouseUp && e.button == 0 ) {
@@ -920,14 +1090,19 @@ namespace Hoshino
             var scrollRect1 = Rect.MinMaxRect(0, centerRect.yMin, screenWidth, screenHeight - 5);
             var scrollRect2 = Rect.MinMaxRect(0, centerRect.yMin, screenWidth, totalHeight + 150);
             scrollPos = GUI.BeginScrollView(scrollRect1, scrollPos, scrollRect2);
-            ShowGroupsAndTracksList(leftRect);
-            ShowTimeLines(centerRect);
-            DrawMinMaxSlider();
+            using (s_GroupsTracksListMarker.Auto())
+                ShowGroupsAndTracksList(leftRect);
+            using (s_TimeLinesMarker.Auto())
+                ShowTimeLines(centerRect);
+            using (s_MinMaxSliderMarker.Auto())
+                DrawMinMaxSlider();
             GUI.EndScrollView();
             ///---
 
-            DrawGuides();
-            AcceptDrops();
+            using (s_GuidesMarker.Auto())
+                DrawGuides();
+            using (s_AcceptDropsMarker.Auto())
+                AcceptDrops();
 
 
             //Final stuff...
@@ -959,9 +1134,11 @@ namespace Hoshino
             //dirty?
             if ( willDirty ) {
                 willDirty = false;
-                EditorUtility.SetDirty(cutscene);
-                foreach ( var o in cutscene.GetComponentsInChildren(typeof(IDirectable), true).Cast<Object>() ) {
-                    EditorUtility.SetDirty(o);
+                using (s_SetDirtyMarker.Auto()) {
+                    EditorUtility.SetDirty(cutscene);
+                    foreach ( var o in cutscene.GetComponentsInChildren(typeof(IDirectable), true).Cast<Object>() ) {
+                        EditorUtility.SetDirty(o);
+                    }
                 }
             }
 
@@ -994,11 +1171,13 @@ namespace Hoshino
 
             if (e.type != EventType.MouseDown)
             {
-                DrawGuideLine(PosToTime(mousePosition.x), Color.white.WithAlpha(0.1f));
+                using (s_GuideLineMarker.Auto())
+                    DrawGuideLine(PosToTime(mousePosition.x), Color.white.WithAlpha(0.1f));
             }
             //the number showing current time when scubing
             if ( cutscene.currentTime > 0 ) {
-                DrawRedGuideLineBtn();
+                using (s_RedGuideLineBtnMarker.Auto())
+                    DrawRedGuideLineBtn();
             }
 
             //repaint
@@ -1013,6 +1192,7 @@ namespace Hoshino
             GUI.skin = null;
 
             if ( viewTimeMax == 0 ) { GUI.Label(centerRect, "<size=40>:-)</size>", Styles.centerLabel); }
+            } // end s_OnGUIMarker
         }
 
         ///----------------------------------------------------------------------------------------------
@@ -1309,6 +1489,37 @@ namespace Hoshino
             GUILayout.FlexibleSpace();
             
             GUI.color = Color.white;
+
+            // --- Actor 绑定选择器：技能级单 Actor，拖入预制体/FBX 即可绑定 ---
+            {
+                var originalColor = GUI.color;
+                GUI.color = new Color(0.6f, 0.8f, 1f);
+
+                string bindingPath = SkillActorBindingCache.Get(cutscene);
+                var currentActorAsset = string.IsNullOrEmpty(bindingPath)
+                    ? null
+                    : AssetDatabase.LoadAssetAtPath<GameObject>(bindingPath);
+
+                EditorGUI.BeginChangeCheck();
+                var newActorAsset = (GameObject)EditorGUILayout.ObjectField(
+                    currentActorAsset, typeof(GameObject), false, GUILayout.Width(120));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    string newPath = newActorAsset != null ? AssetDatabase.GetAssetPath(newActorAsset) : string.Empty;
+                    SkillActorBindingCache.Set(cutscene, newPath);
+                    EnsurePreviewActor(cutscene);
+                    willRepaint = true;
+                }
+
+                if (GUILayout.Button("清除", EditorStyles.toolbarButton, GUILayout.Width(40)))
+                {
+                    SkillActorBindingCache.Set(cutscene, string.Empty);
+                    EnsurePreviewActor(cutscene);
+                    willRepaint = true;
+                }
+
+                GUI.color = originalColor;
+            }
 
             {
                 var originalColor = GUI.color;
@@ -2462,12 +2673,14 @@ namespace Hoshino
 
                 if (GUILayout.Button(fileName, EditorStyles.label, GUILayout.ExpandWidth(true)))
                 {
+                    TryEnterPreviewScene();
                     var cutscene = SkillFileManager.OpenFile(path);
                     if (cutscene != null) InitializeAll(cutscene);
                 }
 
                 if (GUILayout.Button("打开", GUILayout.Width(50)))
                 {
+                    TryEnterPreviewScene();
                     var cutscene = SkillFileManager.OpenFile(path);
                     if (cutscene != null) InitializeAll(cutscene);
                 }
@@ -2502,6 +2715,7 @@ namespace Hoshino
                 newFileName = GUILayout.TextField(newFileName, GUILayout.ExpandWidth(true));
                 if (GUILayout.Button("新建", GUILayout.Width(60)))
                 {
+                    TryEnterPreviewScene();
                     var cutscene = SkillFileManager.CreateNewFile(newFileName);
                     if (cutscene != null) InitializeAll(cutscene);
                 }
@@ -2515,6 +2729,7 @@ namespace Hoshino
                 var selectedPath = EditorUtility.OpenFilePanel("选择技能文件", SkillFileManager.DATA_FOLDER, "skill");
                 if (!string.IsNullOrEmpty(selectedPath))
                 {
+                    TryEnterPreviewScene();
                     var cutscene = SkillFileManager.OpenFile(selectedPath);
                     if (cutscene != null) InitializeAll(cutscene);
                 }
@@ -3170,6 +3385,8 @@ namespace Hoshino
             {
                 DestroyImmediate(toDestroy.gameObject);
             }
+
+            // --- 退出技能文件，保持预览场景（销毁预览 Actor 随 Cutscene 一起完成）---
             willRepaint = true;
         }
 

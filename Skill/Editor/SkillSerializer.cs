@@ -13,7 +13,9 @@ namespace Hoshino
     public static class SkillSerializer
     {
         private const uint BinaryMagic = 0x4B534F48; // HOSK
-        private const int BinaryVersion = 2;
+        private const int BinaryVersion = 3;
+        // v2 为旧版本（无 characterReference 字段），读取时按版本分支处理
+        private const int BinaryVersionLegacy = 2;
 
         public static SkillFileData Export(Cutscene cutscene)
         {
@@ -78,6 +80,9 @@ namespace Hoshino
             writer.Write(cutscene.viewTimeMax);
             writer.Write(cutscene.playTimeMin);
             writer.Write(cutscene.playTimeMax);
+
+            // --- v3 新增：技能级 Actor 绑定路径 ---
+            writer.Write(SkillActorBindingCache.Get(cutscene) ?? string.Empty);
 
             writer.Write(cutscene.groups.Count);
             foreach (CutsceneGroup group in cutscene.groups)
@@ -185,7 +190,7 @@ namespace Hoshino
                 throw new InvalidDataException("Invalid Hoshino skill binary magic.");
 
             int version = reader.ReadInt32();
-            if (version != BinaryVersion)
+            if (version != BinaryVersion && version != BinaryVersionLegacy)
                 throw new InvalidDataException($"Unsupported Hoshino skill binary version {version}.");
 
             SkillFileData data = new()
@@ -202,6 +207,9 @@ namespace Hoshino
                 playTimeMin = reader.ReadSingle(),
                 playTimeMax = reader.ReadSingle()
             };
+
+            // --- v3 新增字段：旧版本(v2)没有该字段，默认空串 ---
+            data.characterReference = (version >= BinaryVersion) ? reader.ReadString() : string.Empty;
 
             int groupCount = reader.ReadInt32();
             for (int i = 0; i < groupCount; i++)
@@ -298,6 +306,9 @@ namespace Hoshino
             data.playTimeMin = cutscene.playTimeMin;
             data.playTimeMax = cutscene.playTimeMax;
 
+            // --- 技能级 Actor 绑定（供调试 JSON）---
+            data.characterReference = SkillActorBindingCache.Get(cutscene);
+
             foreach (CutsceneGroup group in cutscene.groups)
             {
                 GroupEntry groupEntry = new();
@@ -391,6 +402,9 @@ namespace Hoshino
 
             // --- 导入 specialDatas 到 cutscene 的内存缓存 ---
             SkillBlackboardCache.Set(cutscene, data.specialDatas ?? new());
+
+            // --- 导入技能级 Actor 绑定到内存缓存 ---
+            SkillActorBindingCache.Set(cutscene, data.characterReference ?? string.Empty);
         }
 
         private static CutsceneGroup ImportGroup(Cutscene cutscene, GroupEntry entry)
