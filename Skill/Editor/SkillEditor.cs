@@ -2685,6 +2685,13 @@ namespace Hoshino
                     if (cutscene != null) InitializeAll(cutscene);
                 }
 
+                if (GUILayout.Button("复制ID", GUILayout.Width(60)))
+                {
+                    int skillId = SkillDefinitionCompiler.CalculateSkillId(path);
+                    EditorGUIUtility.systemCopyBuffer = skillId.ToString();
+                    ShowNotification(new GUIContent($"已复制 SkillId: {skillId}"));
+                }
+
                 if (GUILayout.Button("删除", GUILayout.Width(50)))
                 {
                     if (EditorUtility.DisplayDialog("确认删除", $"确定要删除 [{fileName}] 吗?", "删除", "取消"))

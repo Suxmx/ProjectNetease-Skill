@@ -61,7 +61,7 @@ namespace Hoshino
                 throw new InvalidDataException($"Unable to parse skill binary at {sourcePath}.");
 
             string skillKey = Path.GetFileNameWithoutExtension(sourcePath);
-            int skillId = Animator.StringToHash(skillKey);
+            int skillId = CalculateSkillId(sourcePath);
             SkillRuntimeNode[] nodes;
             byte[] nodeDataBlob;
             using (MemoryStream dataStream = new())
@@ -96,6 +96,16 @@ namespace Hoshino
             WriteOrDeleteDebugJson(outputPath, definition);
             AssetDatabase.ImportAsset(outputPath);
             return outputPath;
+        }
+
+        /// <summary>
+        /// Calculates the runtime skill id from the source skill file path.
+        /// </summary>
+        public static int CalculateSkillId(string sourcePath)
+        {
+            sourcePath = SkillFileManager.NormalizeAssetPath(sourcePath);
+            string skillKey = Path.GetFileNameWithoutExtension(sourcePath);
+            return Animator.StringToHash(skillKey);
         }
 
         public static string GetCompiledDebugJsonPath(string compiledPath)
